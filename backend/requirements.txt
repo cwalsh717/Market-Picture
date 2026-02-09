@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+httpx
+apscheduler
+anthropic
+python-dotenv
+aiosqlite
+numpy
+pandas
