@@ -135,3 +135,47 @@ SYMBOL_ASSET_CLASS: dict[str, str] = {
 for _series_id in FRED_SERIES:
     SYMBOL_ASSET_CLASS[_series_id] = "rates"
 SYMBOL_ASSET_CLASS["SPREAD_2S10S"] = "rates"
+
+# ---------------------------------------------------------------------------
+# Correlation detection
+# ---------------------------------------------------------------------------
+CORRELATION_CONFIG: dict[str, float] = {
+    "min_data_points": 5,          # Minimum daily observations for Pearson r
+    "anomaly_deviation_threshold": 0.4,  # |actual − expected| to flag anomaly
+    "comovement_magnitude_band": 1.5,    # Pct-point band for 1D grouping
+    "comovement_min_change_pct": 0.3,    # Filter flat assets in 1D mode
+}
+
+# Expected baseline correlations (long-run approximations).
+# Keys are (symbol_a, symbol_b) sorted alphabetically.
+BASELINE_CORRELATIONS: dict[tuple[str, str], float] = {
+    # Traditionally high positive (equity indices)
+    ("NDX", "SPX"): 0.90,
+    ("RUT", "SPX"): 0.85,
+    ("NDX", "RUT"): 0.80,
+    ("SX5E", "UKX"): 0.85,
+    # Traditionally negative
+    ("SPX", "VIX"): -0.80,
+    # Normally uncorrelated (crypto vs traditional)
+    ("BTC/USD", "NDX"): 0.15,
+    ("BTC/USD", "RUT"): 0.10,
+    ("BTC/USD", "SPX"): 0.10,
+    ("ETH/USD", "SPX"): 0.10,
+    # Scarcity-risk (critical minerals vs broad risk)
+    ("LIT", "NDX"): 0.45,
+    ("LIT", "SPX"): 0.50,
+    ("NDX", "REMX"): 0.40,
+    ("NDX", "URA"): 0.35,
+    ("REMX", "SPX"): 0.45,
+    ("SPX", "URA"): 0.40,
+    # Scarcity internal
+    ("LIT", "REMX"): 0.65,
+    ("LIT", "URA"): 0.55,
+    ("REMX", "URA"): 0.60,
+    # Cross-asset
+    ("DGS10", "SPX"): 0.15,
+    ("DXY", "SPX"): -0.20,
+    ("SPX", "WTI"): 0.35,
+    ("SPX", "XAU"): -0.10,
+    ("SPX", "XCU"): 0.50,
+}

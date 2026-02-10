@@ -175,9 +175,13 @@ async def generate_premarket_summary() -> None:
 async def generate_close_summary() -> None:
     """Generate the after-close LLM summary (~4:30 PM ET).
 
-    Computes regime classification and persists to the summaries table.
-    LLM narrative generation will be added later.
+    Computes regime classification and cross-asset correlations, then
+    persists to the summaries table.  LLM narrative generation will be
+    added later.
     """
+    import json
+
+    from backend.intelligence.correlations import detect_correlations
     from backend.intelligence.regime import classify_regime
 
     logger.info("After-close summary job triggered")
@@ -187,13 +191,27 @@ async def generate_close_summary() -> None:
         regime = await classify_regime(conn)
         logger.info("Regime: %s | %s", regime["label"], regime["reason"])
 
+        corr_1d = await detect_correlations(conn, period="1D")
+        corr_1m = await detect_correlations(conn, period="1M")
+        logger.info(
+            "Correlations: %d groups, %d anomalies (1D); "
+            "%d groups, %d anomalies (1M)",
+            len(corr_1d["groups"]),
+            len(corr_1d["anomalies"]),
+            len(corr_1m["groups"]),
+            len(corr_1m["anomalies"]),
+        )
+
+        moving_together = json.dumps({"1D": corr_1d, "1M": corr_1m})
+
         today = datetime.now(_ET).date().isoformat()
         await conn.execute(
             """
-            INSERT INTO summaries (date, period, regime_label, regime_reason)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO summaries
+                (date, period, regime_label, regime_reason, moving_together_json)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (today, "close", regime["label"], regime["reason"]),
+            (today, "close", regime["label"], regime["reason"], moving_together),
         )
         await conn.commit()
     except Exception:
