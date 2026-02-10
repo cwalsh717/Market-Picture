@@ -43,10 +43,10 @@ market-picture/
 ## Asset Coverage (23 Twelve Data + 4 FRED)
 
 ### Twelve Data:
-- Equities: S&P 500, Nasdaq 100, Russell 2000, VIX
-- International: Nikkei 225, FTSE 100, Euro Stoxx 50, Hang Seng
-- Currencies: DXY
-- Commodities: Crude Oil (WTI), Natural Gas, Gold, Copper
+- Equities: S&P 500 (SPX), Nasdaq 100 (NDX), Russell 2000 (IWM), VIX (VIXY)
+- International: Japan (EWJ), FTSE 100 (UKX), Euro Stoxx 50 (FEZ), Hong Kong (EWH)
+- Currencies: US Dollar (UUP)
+- Commodities: Crude Oil (WTI), Natural Gas (NG), Gold (XAU), Copper (CPER)
 - Critical Minerals: Uranium (URA), Lithium (LIT), Rare Earths (REMX)
 - Crypto: Bitcoin (BTC), Ethereum (ETH)
 

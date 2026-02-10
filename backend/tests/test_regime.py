@@ -1,7 +1,7 @@
 """Tests for the rule-based regime classification module.
 
 Covers:
-- Each signal evaluator in isolation (SPX trend, VIX, HY spread, DXY, gold)
+- Each signal evaluator in isolation (SPX trend, VIXY, HY spread, UUP, gold)
 - Aggregation logic (_classify)
 - Reason builder
 - Full classify_regime integration with various market scenarios
@@ -166,9 +166,9 @@ class TestSpxTrend:
 
 class TestVix:
     @pytest.mark.asyncio
-    async def test_low_vix_risk_on(self, tmp_path):
+    async def test_vixy_falling_risk_on(self, tmp_path):
         db_path = str(tmp_path / "test.db")
-        await _insert_snapshot(db_path, "VIX", 18.0)
+        await _insert_snapshot(db_path, "VIXY", 24.0, change_pct=-7.0)
 
         conn = await _conn(db_path)
         try:
@@ -177,12 +177,12 @@ class TestVix:
             await conn.close()
 
         assert sig["direction"] == "risk_on"
-        assert "18.0" in sig["detail"]
+        assert "falling" in sig["detail"]
 
     @pytest.mark.asyncio
-    async def test_high_vix_risk_off(self, tmp_path):
+    async def test_vixy_spiking_risk_off(self, tmp_path):
         db_path = str(tmp_path / "test.db")
-        await _insert_snapshot(db_path, "VIX", 28.0)
+        await _insert_snapshot(db_path, "VIXY", 30.0, change_pct=8.0)
 
         conn = await _conn(db_path)
         try:
@@ -191,12 +191,12 @@ class TestVix:
             await conn.close()
 
         assert sig["direction"] == "risk_off"
-        assert "28.0" in sig["detail"]
+        assert "spiking" in sig["detail"]
 
     @pytest.mark.asyncio
     async def test_neutral_range(self, tmp_path):
         db_path = str(tmp_path / "test.db")
-        await _insert_snapshot(db_path, "VIX", 22.0)
+        await _insert_snapshot(db_path, "VIXY", 25.0, change_pct=-2.0)
 
         conn = await _conn(db_path)
         try:
@@ -321,7 +321,7 @@ class TestDxy:
     @pytest.mark.asyncio
     async def test_spiking_risk_off(self, tmp_path):
         db_path = str(tmp_path / "test.db")
-        await _insert_snapshot(db_path, "DXY", 105.0, change_pct=1.5)
+        await _insert_snapshot(db_path, "UUP", 27.5, change_pct=1.5)
 
         conn = await _conn(db_path)
         try:
@@ -335,7 +335,7 @@ class TestDxy:
     @pytest.mark.asyncio
     async def test_stable_neutral(self, tmp_path):
         db_path = str(tmp_path / "test.db")
-        await _insert_snapshot(db_path, "DXY", 103.0, change_pct=0.2)
+        await _insert_snapshot(db_path, "UUP", 26.8, change_pct=0.2)
 
         conn = await _conn(db_path)
         try:
@@ -493,13 +493,13 @@ class TestBuildReason:
 class TestClassifyRegime:
     @pytest.mark.asyncio
     async def test_clear_risk_on(self, tmp_path):
-        """SPX above MA, VIX low, HY tight → RISK-ON."""
+        """SPX above MA, VIXY falling, HY tight → RISK-ON."""
         db_path = str(tmp_path / "test.db")
         await _seed_spx_history(db_path, 5000.0, 20)
         await _insert_snapshot(db_path, "SPX", 5200.0, change_pct=0.5)
-        await _insert_snapshot(db_path, "VIX", 16.0)
+        await _insert_snapshot(db_path, "VIXY", 22.0, change_pct=-7.0)
         await _insert_snapshot(db_path, "BAMLH0A0HYM2", 3.2)
-        await _insert_snapshot(db_path, "DXY", 103.0, change_pct=0.2)
+        await _insert_snapshot(db_path, "UUP", 26.8, change_pct=0.2)
         await _insert_snapshot(db_path, "XAU", 2050.0, change_pct=0.3)
 
         conn = await _conn(db_path)
@@ -515,7 +515,7 @@ class TestClassifyRegime:
 
     @pytest.mark.asyncio
     async def test_clear_risk_off(self, tmp_path):
-        """SPX below MA, VIX elevated, HY widening → RISK-OFF."""
+        """SPX below MA, VIXY spiking, HY widening → RISK-OFF."""
         db_path = str(tmp_path / "test.db")
         await _seed_spx_history(db_path, 5000.0, 20)
 
@@ -523,9 +523,9 @@ class TestClassifyRegime:
         await _insert_snapshot(db_path, "BAMLH0A0HYM2", 3.50, timestamp=week_ago)
 
         await _insert_snapshot(db_path, "SPX", 4800.0, change_pct=-2.0)
-        await _insert_snapshot(db_path, "VIX", 30.0)
+        await _insert_snapshot(db_path, "VIXY", 32.0, change_pct=8.0)
         await _insert_snapshot(db_path, "BAMLH0A0HYM2", 3.65)
-        await _insert_snapshot(db_path, "DXY", 106.0, change_pct=1.5)
+        await _insert_snapshot(db_path, "UUP", 28.0, change_pct=1.5)
         await _insert_snapshot(db_path, "XAU", 2100.0, change_pct=2.0)
 
         conn = await _conn(db_path)
@@ -539,14 +539,14 @@ class TestClassifyRegime:
 
     @pytest.mark.asyncio
     async def test_mixed_conflicting_signals(self, tmp_path):
-        """SPX above MA but VIX elevated → MIXED."""
+        """SPX above MA but VIXY spiking → MIXED."""
         db_path = str(tmp_path / "test.db")
         await _seed_spx_history(db_path, 5000.0, 20)
 
         await _insert_snapshot(db_path, "SPX", 5200.0, change_pct=0.5)
-        await _insert_snapshot(db_path, "VIX", 28.0)
+        await _insert_snapshot(db_path, "VIXY", 30.0, change_pct=7.0)
         await _insert_snapshot(db_path, "BAMLH0A0HYM2", 4.0)
-        await _insert_snapshot(db_path, "DXY", 103.0, change_pct=0.2)
+        await _insert_snapshot(db_path, "UUP", 26.8, change_pct=0.2)
         await _insert_snapshot(db_path, "XAU", 2050.0, change_pct=0.3)
 
         conn = await _conn(db_path)
@@ -572,9 +572,9 @@ class TestClassifyRegime:
 
     @pytest.mark.asyncio
     async def test_partial_data(self, tmp_path):
-        """Only VIX available, everything else missing → MIXED."""
+        """Only VIXY available, everything else missing → MIXED."""
         db_path = str(tmp_path / "test.db")
-        await _insert_snapshot(db_path, "VIX", 18.0)
+        await _insert_snapshot(db_path, "VIXY", 22.0, change_pct=-7.0)
 
         conn = await _conn(db_path)
         try:
@@ -595,12 +595,12 @@ class TestRegimeConfig:
         from backend.config import REGIME_THRESHOLDS
 
         required = [
-            "vix_risk_on",
-            "vix_risk_off",
+            "vixy_spike_pct",
+            "vixy_drop_pct",
             "hy_spread_risk_on",
             "hy_spread_risk_off",
             "hy_spread_widening_bps",
-            "dxy_spike_pct",
+            "uup_spike_pct",
             "spx_ma_period",
             "gold_safe_haven_pct",
         ]

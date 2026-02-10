@@ -227,8 +227,8 @@ class TestGroupByComovement:
         snapshots = {
             "SPX": {"change_pct": 2.0},
             "NDX": {"change_pct": 2.5},
-            "RUT": {"change_pct": -1.5},
-            "VIX": {"change_pct": -2.0},
+            "IWM": {"change_pct": -1.5},
+            "VIXY": {"change_pct": -2.0},
         }
         groups = _group_by_comovement(snapshots)
         up = [g for g in groups if g["direction"] == "up"]
@@ -236,7 +236,7 @@ class TestGroupByComovement:
         assert len(up) == 1
         assert set(up[0]["symbols"]) == {"SPX", "NDX"}
         assert len(down) == 1
-        assert set(down[0]["symbols"]) == {"RUT", "VIX"}
+        assert set(down[0]["symbols"]) == {"IWM", "VIXY"}
 
     def test_filters_flat_assets(self):
         snapshots = {
@@ -251,12 +251,12 @@ class TestGroupByComovement:
         snapshots = {
             "SPX": {"change_pct": 5.0},
             "NDX": {"change_pct": 4.5},
-            "RUT": {"change_pct": 1.0},
+            "IWM": {"change_pct": 1.0},
             "UKX": {"change_pct": 0.8},
         }
         groups = _group_by_comovement(snapshots)
         up_groups = [g for g in groups if g["direction"] == "up"]
-        # SPX/NDX (~5%) and RUT/UKX (~1%) should be separate bands.
+        # SPX/NDX (~5%) and IWM/UKX (~1%) should be separate bands.
         assert len(up_groups) == 2
 
     def test_empty_snapshots(self):
@@ -270,7 +270,7 @@ class TestGroupByComovement:
         """A lone asset in a direction doesn't form a group."""
         snapshots = {
             "SPX": {"change_pct": 2.0},
-            "VIX": {"change_pct": -1.5},
+            "VIXY": {"change_pct": -1.5},
         }
         groups = _group_by_comovement(snapshots)
         assert groups == []
@@ -329,9 +329,9 @@ class TestDetectUnexpectedConvergence:
 class TestDetectBrokenCorrelations:
     def test_spx_vix_breakdown_flagged(self):
         pairs = {
-            ("SPX", "VIX"): {
+            ("SPX", "VIXY"): {
                 "symbol_a": "SPX",
-                "symbol_b": "VIX",
+                "symbol_b": "VIXY",
                 "correlation": 0.10,
                 "data_points": 20,
             },
@@ -409,10 +409,10 @@ class TestDetectScarcityDivergence:
 
 class TestDetect1dAnomalies:
     def test_vix_up_with_spx_up(self):
-        """SPX and VIX both up is anomalous (normally inversely correlated)."""
+        """SPX and VIXY both up is anomalous (normally inversely correlated)."""
         snapshots = {
             "SPX": {"change_pct": 2.0},
-            "VIX": {"change_pct": 1.5},
+            "VIXY": {"change_pct": 1.5},
         }
         anomalies = _detect_1d_anomalies(snapshots)
         types = [a["anomaly_type"] for a in anomalies]
@@ -441,7 +441,7 @@ class TestDetect1dAnomalies:
     def test_flat_assets_skipped(self):
         snapshots = {
             "SPX": {"change_pct": 0.1},
-            "VIX": {"change_pct": 0.1},
+            "VIXY": {"change_pct": 0.1},
         }
         anomalies = _detect_1d_anomalies(snapshots)
         assert anomalies == []
@@ -672,7 +672,7 @@ class TestDetectCorrelations:
         db_path = str(tmp_path / "test.db")
         await _insert_snapshot(db_path, "SPX", 5100.0, change_pct=2.0)
         await _insert_snapshot(db_path, "NDX", 18000.0, change_pct=2.5)
-        await _insert_snapshot(db_path, "VIX", 20.0, change_pct=1.5)
+        await _insert_snapshot(db_path, "VIXY", 20.0, change_pct=1.5)
 
         conn = await _conn(db_path)
         try:
@@ -685,7 +685,7 @@ class TestDetectCorrelations:
         assert isinstance(result["groups"], list)
         assert isinstance(result["anomalies"], list)
         assert result["timestamp"]
-        # SPX and VIX both up should produce an anomaly.
+        # SPX and VIXY both up should produce an anomaly.
         types = [a["anomaly_type"] for a in result["anomalies"]]
         assert "broken_correlation" in types
         assert isinstance(result["diverging"], list)

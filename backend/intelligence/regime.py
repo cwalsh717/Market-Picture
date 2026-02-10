@@ -154,17 +154,22 @@ async def _eval_spx_trend(conn: aiosqlite.Connection) -> Signal:
 
 
 async def _eval_vix(conn: aiosqlite.Connection) -> Signal:
-    """VIX level check against risk-on / risk-off thresholds."""
-    latest = await _get_latest_snapshot(conn, "VIX")
-    if latest is None:
-        return Signal(name="vix", direction="neutral", detail="VIX data unavailable")
+    """VIXY percentage-change check for volatility direction.
 
-    vix = latest["price"]
-    if vix < REGIME_THRESHOLDS["vix_risk_on"]:
-        return Signal(name="vix", direction="risk_on", detail=f"VIX low ({vix:.1f})")
-    if vix > REGIME_THRESHOLDS["vix_risk_off"]:
-        return Signal(name="vix", direction="risk_off", detail=f"VIX elevated ({vix:.1f})")
-    return Signal(name="vix", direction="neutral", detail=f"VIX neutral ({vix:.1f})")
+    VIXY is a VIX short-term futures ETF — its daily percentage move
+    indicates whether volatility is spiking (risk-off) or collapsing
+    (risk-on).
+    """
+    latest = await _get_latest_snapshot(conn, "VIXY")
+    if latest is None or latest.get("change_pct") is None:
+        return Signal(name="vix", direction="neutral", detail="VIXY data unavailable")
+
+    change = latest["change_pct"]
+    if change > REGIME_THRESHOLDS["vixy_spike_pct"]:
+        return Signal(name="vix", direction="risk_off", detail=f"VIXY spiking ({change:+.1f}%)")
+    if change < REGIME_THRESHOLDS["vixy_drop_pct"]:
+        return Signal(name="vix", direction="risk_on", detail=f"VIXY falling ({change:+.1f}%)")
+    return Signal(name="vix", direction="neutral", detail=f"VIXY stable ({change:+.1f}%)")
 
 
 async def _eval_hy_spread(conn: aiosqlite.Connection) -> Signal:
@@ -206,19 +211,23 @@ async def _eval_hy_spread(conn: aiosqlite.Connection) -> Signal:
 
 
 async def _eval_dxy(conn: aiosqlite.Connection) -> Signal:
-    """DXY spike detection (asymmetric — only flags risk-off)."""
-    latest = await _get_latest_snapshot(conn, "DXY")
+    """UUP spike detection (asymmetric — only flags risk-off).
+
+    UUP is the Invesco DB US Dollar Index Bullish Fund — a sharp daily
+    rise signals dollar strength, which is typically risk-off.
+    """
+    latest = await _get_latest_snapshot(conn, "UUP")
     if latest is None or latest.get("change_pct") is None:
-        return Signal(name="dxy", direction="neutral", detail="DXY data unavailable")
+        return Signal(name="dxy", direction="neutral", detail="UUP data unavailable")
 
     change = latest["change_pct"]
-    if change > REGIME_THRESHOLDS["dxy_spike_pct"]:
+    if change > REGIME_THRESHOLDS["uup_spike_pct"]:
         return Signal(
             name="dxy",
             direction="risk_off",
             detail=f"dollar spiking (+{change:.1f}%)",
         )
-    return Signal(name="dxy", direction="neutral", detail=f"DXY stable ({change:+.1f}%)")
+    return Signal(name="dxy", direction="neutral", detail=f"UUP stable ({change:+.1f}%)")
 
 
 async def _eval_gold_vs_equities(conn: aiosqlite.Connection) -> Signal:
@@ -285,7 +294,7 @@ def _build_reason(signals: list[Signal]) -> str:
 async def classify_regime(conn: aiosqlite.Connection) -> RegimeResult:
     """Classify the current market regime from latest snapshots.
 
-    Evaluates five signals (S&P trend, VIX, HY spread, DXY, gold vs
+    Evaluates five signals (S&P trend, VIXY, HY spread, UUP, gold vs
     equities), aggregates them, and returns a labelled result.
     """
     signals = [

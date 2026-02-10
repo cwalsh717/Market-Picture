@@ -170,39 +170,40 @@ class TestGetActiveSymbols:
         active = get_active_symbols(t)
         assert "SPX" in active
         assert "NDX" in active
-        assert "DXY" in active
+        assert "UUP" in active
         assert "WTI" in active
         assert "URA" in active
         assert "BTC/USD" in active
         assert "ETH/USD" in active
 
-    def test_us_hours_excludes_asian_markets(self):
-        """10 AM ET: Japan and HK are closed (UK/Europe still open until 11:30)."""
+    def test_us_hours_includes_international_etfs(self):
+        """10 AM ET: US-listed international ETFs are active during US hours."""
         t = datetime(2025, 1, 6, 10, 0, tzinfo=_ET)
         active = get_active_symbols(t)
-        assert "NKY" not in active
-        assert "HSI" not in active
-        # UK/Europe (03:00-11:30 ET) are still open at 10 AM
+        assert "EWJ" in active
+        assert "EWH" in active
+        assert "FEZ" in active
+        # UK (03:00-11:30 ET) is still open at 10 AM
         assert "UKX" in active
-        assert "SX5E" in active
 
-    def test_early_morning_uk_europe_open(self):
-        """3 AM ET: UK + Europe + crypto, not US."""
+    def test_early_morning_uk_only(self):
+        """3 AM ET: UK + crypto only. US-listed ETFs are closed."""
         t = datetime(2025, 1, 6, 3, 0, tzinfo=_ET)
         active = get_active_symbols(t)
         assert "UKX" in active
-        assert "SX5E" in active
         assert "BTC/USD" in active
         assert "SPX" not in active
+        assert "EWJ" not in active
+        assert "FEZ" not in active
 
-    def test_late_night_japan_hk_open(self):
-        """22:00 ET: Japan + HK + crypto."""
+    def test_late_night_only_crypto(self):
+        """22:00 ET: only crypto (international ETFs are US-listed, closed)."""
         t = datetime(2025, 1, 6, 22, 0, tzinfo=_ET)
         active = get_active_symbols(t)
-        assert "NKY" in active
-        assert "HSI" in active
         assert "BTC/USD" in active
         assert "SPX" not in active
+        assert "EWJ" not in active
+        assert "EWH" not in active
 
     def test_all_closed_except_crypto(self):
         """17:00 ET: only crypto should be active."""
@@ -446,7 +447,7 @@ _FAKE_REGIME = {
     "reason": "Broad risk appetite",
     "signals": [
         {"name": "spx_trend", "direction": "risk_on", "detail": "S&P above 20-day MA"},
-        {"name": "vix_level", "direction": "risk_on", "detail": "VIX 14 < 20"},
+        {"name": "vix", "direction": "risk_on", "detail": "VIXY falling (-7.0%)"},
     ],
 }
 

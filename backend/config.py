@@ -32,14 +32,12 @@ MARKET_HOURS: dict[str, dict[str, str]] = {
 # Regime thresholds
 # ---------------------------------------------------------------------------
 REGIME_THRESHOLDS: dict[str, float] = {
-    "vix_risk_off": 25.0,          # VIX above this → risk-off signal
-    "vix_risk_on": 20.0,           # VIX below this → risk-on signal
+    "vixy_spike_pct": 5.0,         # VIXY up > this % → vol spiking → risk-off
+    "vixy_drop_pct": -5.0,         # VIXY down > this % → vol falling → risk-on
     "hy_spread_risk_off": 5.0,     # HY spread above this → risk-off
     "hy_spread_risk_on": 3.5,      # HY spread below this → risk-on
     "hy_spread_widening_bps": 10,  # HY spread WoW increase > this (bps) → widening
-    "dxy_strong": 105.0,           # DXY above this → strong dollar
-    "dxy_weak": 100.0,             # DXY below this → weak dollar
-    "dxy_spike_pct": 1.0,          # DXY daily change > this % → spiking
+    "uup_spike_pct": 1.0,          # UUP daily change > this % → dollar spiking
     "spx_ma_period": 20,           # Number of trading days for S&P 500 MA
     "yield_curve_inverted": 0.0,   # 2s10s below this → inverted
     "gold_safe_haven_pct": 1.5,    # Gold up >1.5% on a risk-off day → flight to safety
@@ -53,23 +51,23 @@ ASSETS: dict[str, dict[str, str]] = {
     "equities": {
         "SPX": "S&P 500",
         "NDX": "Nasdaq 100",
-        "RUT": "Russell 2000",
-        "VIX": "VIX",
+        "IWM": "Russell 2000",
+        "VIXY": "VIX (Short-Term Futures)",
     },
     "international": {
-        "NKY": "Nikkei 225",
+        "EWJ": "Japan (EWJ)",
         "UKX": "FTSE 100",
-        "SX5E": "Euro Stoxx 50",
-        "HSI": "Hang Seng",
+        "FEZ": "Euro Stoxx 50 (FEZ)",
+        "EWH": "Hong Kong (EWH)",
     },
     "currencies": {
-        "DXY": "US Dollar Index",
+        "UUP": "US Dollar (UUP)",
     },
     "commodities": {
         "WTI": "Crude Oil (WTI)",
         "NG": "Natural Gas",
         "XAU": "Gold",
-        "XCU": "Copper",
+        "CPER": "Copper (CPER)",
     },
     "critical_minerals": {
         "URA": "Uranium ETF",
@@ -101,20 +99,20 @@ SYMBOL_MARKET_MAP: dict[str, str] = {
     # Equities (US hours)
     "SPX": "US",
     "NDX": "US",
-    "RUT": "US",
-    "VIX": "US",
-    # International
-    "NKY": "Japan",
+    "IWM": "US",
+    "VIXY": "US",
+    # International (US-listed ETF proxies — trade during US hours)
+    "EWJ": "US",
     "UKX": "UK",
-    "SX5E": "Europe",
-    "HSI": "HK",
+    "FEZ": "US",
+    "EWH": "US",
     # Currencies (US hours)
-    "DXY": "US",
+    "UUP": "US",
     # Commodities (US hours)
     "WTI": "US",
     "NG": "US",
     "XAU": "US",
-    "XCU": "US",
+    "CPER": "US",
     # Critical minerals (US-listed ETFs)
     "URA": "US",
     "LIT": "US",
@@ -152,14 +150,14 @@ CORRELATION_CONFIG: dict[str, float] = {
 BASELINE_CORRELATIONS: dict[tuple[str, str], float] = {
     # Traditionally high positive (equity indices)
     ("NDX", "SPX"): 0.90,
-    ("RUT", "SPX"): 0.85,
-    ("NDX", "RUT"): 0.80,
-    ("SX5E", "UKX"): 0.85,
+    ("IWM", "SPX"): 0.85,
+    ("IWM", "NDX"): 0.80,
+    ("FEZ", "UKX"): 0.85,
     # Traditionally negative
-    ("SPX", "VIX"): -0.80,
+    ("SPX", "VIXY"): -0.80,
     # Normally uncorrelated (crypto vs traditional)
     ("BTC/USD", "NDX"): 0.15,
-    ("BTC/USD", "RUT"): 0.10,
+    ("BTC/USD", "IWM"): 0.10,
     ("BTC/USD", "SPX"): 0.10,
     ("ETH/USD", "SPX"): 0.10,
     # Scarcity-risk (critical minerals vs broad risk)
@@ -175,10 +173,10 @@ BASELINE_CORRELATIONS: dict[tuple[str, str], float] = {
     ("REMX", "URA"): 0.60,
     # Cross-asset
     ("DGS10", "SPX"): 0.15,
-    ("DXY", "SPX"): -0.20,
+    ("SPX", "UUP"): -0.20,
     ("SPX", "WTI"): 0.35,
     ("SPX", "XAU"): -0.10,
-    ("SPX", "XCU"): 0.50,
+    ("CPER", "SPX"): 0.50,
 }
 
 # ---------------------------------------------------------------------------

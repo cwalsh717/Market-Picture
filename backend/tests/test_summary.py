@@ -54,14 +54,14 @@ from backend.intelligence.summary import (
 
 def _make_regime(
     label: str = "RISK-ON",
-    reason: str = "VIX low; S&P above 20-day MA",
+    reason: str = "VIXY falling; S&P above 20-day MA",
     signals: list = None,
     timestamp: str = "2026-02-09T15:00:00+00:00",
 ) -> dict:
     """Build a RegimeResult dict for tests."""
     if signals is None:
         signals = [
-            {"name": "vix", "direction": "risk_on", "detail": "VIX low (18.0)"},
+            {"name": "vix", "direction": "risk_on", "detail": "VIXY falling (-7.0%)"},
             {"name": "spx_trend", "direction": "risk_on", "detail": "S&P above 20-day MA (5200 vs 5000)"},
         ]
     return {
@@ -177,10 +177,10 @@ class TestLabel:
         assert _label("BAMLH0A0HYM2") == "HY Corporate Bond Spread"
 
     def test_international_symbol(self):
-        assert _label("NKY") == "Nikkei 225"
+        assert _label("EWJ") == "Japan (EWJ)"
 
     def test_currency_symbol(self):
-        assert _label("DXY") == "US Dollar Index"
+        assert _label("UUP") == "US Dollar (UUP)"
 
 
 # ---------------------------------------------------------------------------
@@ -191,14 +191,14 @@ class TestLabel:
 class TestAssetClass:
     def test_equities(self):
         assert _asset_class("SPX") == "equities"
-        assert _asset_class("VIX") == "equities"
+        assert _asset_class("VIXY") == "equities"
 
     def test_international(self):
-        assert _asset_class("NKY") == "international"
-        assert _asset_class("HSI") == "international"
+        assert _asset_class("EWJ") == "international"
+        assert _asset_class("EWH") == "international"
 
     def test_currencies(self):
-        assert _asset_class("DXY") == "currencies"
+        assert _asset_class("UUP") == "currencies"
 
     def test_commodities(self):
         assert _asset_class("WTI") == "commodities"
@@ -236,12 +236,12 @@ class TestFormatComovementGroups:
         assert "Nasdaq 100" in result
 
     def test_down_group(self):
-        groups = [_make_group(direction="down", avg_change_pct=-1.8, symbols=["WTI", "XCU"])]
+        groups = [_make_group(direction="down", avg_change_pct=-1.8, symbols=["WTI", "CPER"])]
         result = _format_comovement_groups(groups)
         assert "Selling together" in result
         assert "-1.8% avg" in result
         assert "Crude Oil (WTI)" in result
-        assert "Copper" in result
+        assert "Copper (CPER)" in result
 
     def test_empty_groups(self):
         result = _format_comovement_groups([])
@@ -307,14 +307,14 @@ class TestFormatAnomalies:
 class TestFormatRegimeSignals:
     def test_formats_each_signal(self):
         signals = [
-            {"name": "vix", "direction": "risk_on", "detail": "VIX low (18.0)"},
-            {"name": "dxy", "direction": "neutral", "detail": "DXY stable (+0.2%)"},
+            {"name": "vix", "direction": "risk_on", "detail": "VIXY falling (-7.0%)"},
+            {"name": "dxy", "direction": "neutral", "detail": "UUP stable (+0.2%)"},
         ]
         result = _format_regime_signals(signals)
         lines = result.split("\n")
         assert len(lines) == 2
-        assert lines[0] == "- vix (risk_on): VIX low (18.0)"
-        assert lines[1] == "- dxy (neutral): DXY stable (+0.2%)"
+        assert lines[0] == "- vix (risk_on): VIXY falling (-7.0%)"
+        assert lines[1] == "- dxy (neutral): UUP stable (+0.2%)"
 
     def test_empty_signals(self):
         result = _format_regime_signals([])
@@ -454,7 +454,7 @@ class TestBuildMovingTogether:
     def test_multiple_groups(self):
         groups = [
             _make_group(direction="up", avg_change_pct=2.0, symbols=["SPX", "NDX"]),
-            _make_group(direction="down", avg_change_pct=-1.0, symbols=["WTI", "XCU"]),
+            _make_group(direction="down", avg_change_pct=-1.0, symbols=["WTI", "CPER"]),
         ]
         result = _build_moving_together(groups)
         assert len(result) == 2
@@ -495,8 +495,8 @@ class TestFormatDiverging:
         pairs = [
             _make_diverging_pair(),
             _make_diverging_pair(
-                symbol_a="WTI", symbol_b="XCU",
-                label_a="Crude Oil (WTI)", label_b="Copper",
+                symbol_a="WTI", symbol_b="CPER",
+                label_a="Crude Oil (WTI)", label_b="Copper (CPER)",
                 change_pct_a=3.0, change_pct_b=-1.0,
                 baseline_r=0.75,
             ),
@@ -547,23 +547,23 @@ class TestBuildPremarketPrompt:
         assert "2026-02-09" in prompt
 
     def test_contains_regime_info(self):
-        regime = _make_regime(label="RISK-ON", reason="VIX low; S&P above MA")
+        regime = _make_regime(label="RISK-ON", reason="VIXY falling; S&P above MA")
         corr_1d = _make_corr()
         prompt = build_premarket_prompt("2026-02-09", regime, corr_1d)
         assert "RISK-ON" in prompt
-        assert "VIX low" in prompt
+        assert "VIXY falling" in prompt
 
     def test_contains_overnight_section(self):
         """International groups should appear in the overnight section."""
         intl_group = _make_group(
             direction="up", avg_change_pct=1.5,
-            symbols=["NKY", "UKX"],
+            symbols=["EWJ", "UKX"],
         )
         corr_1d = _make_corr(groups=[intl_group])
         regime = _make_regime()
         prompt = build_premarket_prompt("2026-02-09", regime, corr_1d)
-        # Nikkei is international, so overnight section should have data
-        assert "Nikkei 225" in prompt
+        # EWJ is international, so overnight section should have data
+        assert "Japan (EWJ)" in prompt
 
     def test_contains_crypto_section(self):
         """Crypto groups should appear in the crypto section."""
@@ -627,23 +627,23 @@ class TestBuildClosePrompt:
         assert "2026-02-09" in prompt
 
     def test_contains_regime_label_and_reason(self):
-        regime = _make_regime(label="RISK-OFF", reason="VIX elevated; HY spreads widening")
+        regime = _make_regime(label="RISK-OFF", reason="VIXY spiking; HY spreads widening")
         corr_1d = _make_corr()
         corr_1m = _make_corr(period="1M")
         prompt = build_close_prompt("2026-02-09", regime, corr_1d, corr_1m)
         assert "RISK-OFF" in prompt
-        assert "VIX elevated" in prompt
+        assert "VIXY spiking" in prompt
 
     def test_contains_regime_signals(self):
         signals = [
-            {"name": "vix", "direction": "risk_off", "detail": "VIX elevated (28.0)"},
+            {"name": "vix", "direction": "risk_off", "detail": "VIXY spiking (+8.0%)"},
             {"name": "hy_spread", "direction": "risk_off", "detail": "HY spreads widening (+15 bps WoW)"},
         ]
         regime = _make_regime(signals=signals)
         corr_1d = _make_corr()
         corr_1m = _make_corr(period="1M")
         prompt = build_close_prompt("2026-02-09", regime, corr_1d, corr_1m)
-        assert "- vix (risk_off): VIX elevated (28.0)" in prompt
+        assert "- vix (risk_off): VIXY spiking (+8.0%)" in prompt
         assert "- hy_spread (risk_off): HY spreads widening" in prompt
 
     def test_contains_1d_comovement(self):
@@ -657,7 +657,7 @@ class TestBuildClosePrompt:
 
     def test_contains_1m_comovement(self):
         corr_1d = _make_corr()
-        group_1m = _make_group(direction="down", avg_change_pct=-1.0, symbols=["WTI", "XCU"])
+        group_1m = _make_group(direction="down", avg_change_pct=-1.0, symbols=["WTI", "CPER"])
         corr_1m = _make_corr(period="1M", groups=[group_1m])
         regime = _make_regime()
         prompt = build_close_prompt("2026-02-09", regime, corr_1d, corr_1m)
@@ -891,7 +891,7 @@ class TestGenerateClose:
         mock_response.content = [MagicMock(text="Markets closed higher today.")]
         mock_client.messages.create.return_value = mock_response
 
-        regime = _make_regime(label="RISK-ON", reason="VIX low")
+        regime = _make_regime(label="RISK-ON", reason="VIXY falling")
         corr_1d = _make_corr()
         corr_1m = _make_corr(period="1M")
 
@@ -900,7 +900,7 @@ class TestGenerateClose:
         assert result["period"] == "close"
         assert result["summary_text"] == "Markets closed higher today."
         assert result["regime_label"] == "RISK-ON"
-        assert result["regime_reason"] == "VIX low"
+        assert result["regime_reason"] == "VIXY falling"
         assert result["timestamp"]
 
     @pytest.mark.asyncio
@@ -908,7 +908,7 @@ class TestGenerateClose:
         mock_client = AsyncMock()
         mock_client.messages.create.side_effect = RuntimeError("API error")
 
-        regime = _make_regime(label="RISK-OFF", reason="VIX elevated; HY widening")
+        regime = _make_regime(label="RISK-OFF", reason="VIXY spiking; HY widening")
         corr_1d = _make_corr()
         corr_1m = _make_corr(period="1M")
 
@@ -941,7 +941,7 @@ class TestGenerateClose:
         mock_response.content = [MagicMock(text="Summary.")]
         mock_client.messages.create.return_value = mock_response
 
-        group = _make_group(direction="down", avg_change_pct=-3.0, symbols=["WTI", "XCU"])
+        group = _make_group(direction="down", avg_change_pct=-3.0, symbols=["WTI", "CPER"])
         regime = _make_regime()
         corr_1d = _make_corr(groups=[group])
         corr_1m = _make_corr(period="1M")
@@ -973,7 +973,7 @@ class TestGenerateClose:
         mock_response.content = [MagicMock(text="Summary.")]
         mock_client.messages.create.return_value = mock_response
 
-        group = _make_group(direction="down", avg_change_pct=-1.5, symbols=["WTI", "XCU"])
+        group = _make_group(direction="down", avg_change_pct=-1.5, symbols=["WTI", "CPER"])
         pair = _make_diverging_pair()
         regime = _make_regime()
         corr_1d = _make_corr(groups=[group], diverging=[pair])
@@ -999,11 +999,11 @@ class TestBuildFallbackSummary:
         assert result.startswith(_FALLBACK_PREFIX)
 
     def test_contains_regime_label_and_reason(self):
-        regime = _make_regime(label="RISK-OFF", reason="VIX elevated; HY widening")
+        regime = _make_regime(label="RISK-OFF", reason="VIXY spiking; HY widening")
         corr_1d = _make_corr()
         result = _build_fallback_summary("close", regime, corr_1d)
         assert "RISK-OFF" in result
-        assert "VIX elevated; HY widening" in result
+        assert "VIXY spiking; HY widening" in result
 
     def test_contains_comovement_data(self):
         group = _make_group(direction="up", avg_change_pct=2.0, symbols=["SPX", "NDX"])
