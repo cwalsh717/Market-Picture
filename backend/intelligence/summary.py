@@ -26,6 +26,7 @@ from backend.intelligence.correlations import (
     CoMovingGroup,
     CorrelationAnomaly,
     CorrelationResult,
+    DivergingPair,
 )
 from backend.intelligence.regime import RegimeResult, Signal
 
@@ -140,6 +141,38 @@ def _format_scarcity_summary(
     return "\n".join(parts)
 
 
+def _format_diverging(diverging: list[DivergingPair]) -> str:
+    """Format diverging pairs into readable prompt text."""
+    if not diverging:
+        return "No normally-correlated pairs diverging today."
+    lines: list[str] = []
+    for d in diverging:
+        lines.append(
+            f"{d['label_a']} ({d['change_pct_a']:+.1f}%) vs "
+            f"{d['label_b']} ({d['change_pct_b']:+.1f}%) "
+            f"\u2014 normally correlated (r~{d['baseline_r']:.2f})"
+        )
+    return "\n".join(lines)
+
+
+def _build_diverging_together(
+    diverging: list[DivergingPair],
+) -> list[MovingTogetherGroup]:
+    """Transform DivergingPair list into user-facing MovingTogetherGroup entries."""
+    result: list[MovingTogetherGroup] = []
+    for d in diverging:
+        detail = (
+            f"{d['label_a']} {d['change_pct_a']:+.1f}% vs "
+            f"{d['label_b']} {d['change_pct_b']:+.1f}%"
+        )
+        result.append(MovingTogetherGroup(
+            label="Diverging",
+            assets=[d["label_a"], d["label_b"]],
+            detail=detail,
+        ))
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Moving-together builder (structured output for frontend)
 # ---------------------------------------------------------------------------
@@ -187,6 +220,7 @@ def build_premarket_prompt(
         regime_label=regime["label"],
         regime_reason=regime["reason"],
         comovement_summary=_format_comovement_groups(corr_1d["groups"]),
+        diverging_1d=_format_diverging(corr_1d.get("diverging", [])),
         anomalies_summary=_format_anomalies(corr_1d["anomalies"]),
     )
 
@@ -204,6 +238,7 @@ def build_close_prompt(
         regime_reason=regime["reason"],
         regime_signals=_format_regime_signals(regime["signals"]),
         comovement_1d=_format_comovement_groups(corr_1d["groups"]),
+        diverging_1d=_format_diverging(corr_1d.get("diverging", [])),
         comovement_1m=_format_comovement_groups(corr_1m["groups"]),
         anomalies_1d=_format_anomalies(corr_1d["anomalies"]),
         anomalies_1m=_format_anomalies(corr_1m["anomalies"]),
@@ -257,6 +292,13 @@ def _build_fallback_summary(
         "",
         _format_comovement_groups(corr_1d["groups"]),
     ]
+
+    diverging_text = _format_diverging(corr_1d.get("diverging", []))
+    if diverging_text != "No normally-correlated pairs diverging today.":
+        parts.append("")
+        parts.append("Diverging:")
+        parts.append(diverging_text)
+
     if corr_1m:
         parts.append("")
         parts.append("Monthly co-movement:")
@@ -295,10 +337,14 @@ async def generate_premarket(
         logger.exception("Anthropic API call failed for premarket summary")
         text = _build_fallback_summary("premarket", regime, corr_1d)
 
+    moving = (
+        _build_moving_together(corr_1d["groups"])
+        + _build_diverging_together(corr_1d.get("diverging", []))
+    )
     return SummaryResult(
         period="premarket",
         summary_text=text,
-        moving_together=_build_moving_together(corr_1d["groups"]),
+        moving_together=moving,
         regime_label=regime["label"],
         regime_reason=regime["reason"],
         timestamp=datetime.now(timezone.utc).isoformat(),
@@ -325,10 +371,14 @@ async def generate_close(
         logger.exception("Anthropic API call failed for close summary")
         text = _build_fallback_summary("close", regime, corr_1d, corr_1m)
 
+    moving = (
+        _build_moving_together(corr_1d["groups"])
+        + _build_diverging_together(corr_1d.get("diverging", []))
+    )
     return SummaryResult(
         period="close",
         summary_text=text,
-        moving_together=_build_moving_together(corr_1d["groups"]),
+        moving_together=moving,
         regime_label=regime["label"],
         regime_reason=regime["reason"],
         timestamp=datetime.now(timezone.utc).isoformat(),

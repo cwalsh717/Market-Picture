@@ -7,7 +7,9 @@ Covers:
 - _format_anomalies: CorrelationAnomaly list → prompt text
 - _format_regime_signals: Signal list → prompt text
 - _format_scarcity_summary: scarcity-related data extraction
+- _format_diverging: DivergingPair list → prompt text
 - _build_moving_together: CoMovingGroup → MovingTogetherGroup
+- _build_diverging_together: DivergingPair → MovingTogetherGroup
 - build_premarket_prompt: prompt assembly for pre-market summary
 - build_close_prompt: prompt assembly for after-close summary
 - _call_anthropic: Anthropic API call with mocked client
@@ -26,10 +28,12 @@ import pytest
 from backend.intelligence.summary import (
     MovingTogetherGroup,
     SummaryResult,
+    _build_diverging_together,
     _build_fallback_summary,
     _build_moving_together,
     _format_anomalies,
     _format_comovement_groups,
+    _format_diverging,
     _format_regime_signals,
     _format_scarcity_summary,
     _label,
@@ -72,6 +76,7 @@ def _make_corr(
     period: str = "1D",
     groups: list = None,
     anomalies: list = None,
+    diverging: list = None,
 ) -> dict:
     """Build a CorrelationResult dict for tests."""
     return {
@@ -80,6 +85,7 @@ def _make_corr(
         "data_points": 0,
         "groups": groups if groups is not None else [],
         "anomalies": anomalies if anomalies is not None else [],
+        "diverging": diverging if diverging is not None else [],
         "notable_pairs": [],
     }
 
@@ -119,6 +125,27 @@ def _make_anomaly(
         "expected": expected,
         "actual": actual,
         "detail": detail,
+    }
+
+
+def _make_diverging_pair(
+    symbol_a: str = "NDX",
+    symbol_b: str = "SPX",
+    label_a: str = "Nasdaq 100",
+    label_b: str = "S&P 500",
+    change_pct_a: float = -2.0,
+    change_pct_b: float = 1.5,
+    baseline_r: float = 0.90,
+) -> dict:
+    """Build a DivergingPair dict for tests."""
+    return {
+        "symbol_a": symbol_a,
+        "symbol_b": symbol_b,
+        "label_a": label_a,
+        "label_b": label_b,
+        "change_pct_a": change_pct_a,
+        "change_pct_b": change_pct_b,
+        "baseline_r": baseline_r,
     }
 
 
@@ -446,6 +473,68 @@ class TestBuildMovingTogether:
 
 
 # ---------------------------------------------------------------------------
+# _format_diverging
+# ---------------------------------------------------------------------------
+
+
+class TestFormatDiverging:
+    def test_single_pair(self):
+        pairs = [_make_diverging_pair()]
+        result = _format_diverging(pairs)
+        assert "Nasdaq 100" in result
+        assert "S&P 500" in result
+        assert "-2.0%" in result
+        assert "+1.5%" in result
+        assert "r~0.90" in result
+
+    def test_empty_list(self):
+        result = _format_diverging([])
+        assert result == "No normally-correlated pairs diverging today."
+
+    def test_multiple_pairs(self):
+        pairs = [
+            _make_diverging_pair(),
+            _make_diverging_pair(
+                symbol_a="WTI", symbol_b="XCU",
+                label_a="Crude Oil (WTI)", label_b="Copper",
+                change_pct_a=3.0, change_pct_b=-1.0,
+                baseline_r=0.75,
+            ),
+        ]
+        result = _format_diverging(pairs)
+        lines = result.split("\n")
+        assert len(lines) == 2
+
+
+# ---------------------------------------------------------------------------
+# _build_diverging_together
+# ---------------------------------------------------------------------------
+
+
+class TestBuildDivergingTogether:
+    def test_single_pair(self):
+        pairs = [_make_diverging_pair()]
+        result = _build_diverging_together(pairs)
+        assert len(result) == 1
+        assert result[0]["label"] == "Diverging"
+        assert "Nasdaq 100" in result[0]["assets"]
+        assert "S&P 500" in result[0]["assets"]
+        assert "Nasdaq 100" in result[0]["detail"]
+        assert "S&P 500" in result[0]["detail"]
+
+    def test_empty_list(self):
+        result = _build_diverging_together([])
+        assert result == []
+
+    def test_detail_format(self):
+        pairs = [_make_diverging_pair()]
+        result = _build_diverging_together(pairs)
+        detail = result[0]["detail"]
+        assert "Nasdaq 100 -2.0%" in detail
+        assert "S&P 500 +1.5%" in detail
+
+
+# ---------------------------------------------------------------------------
 # build_premarket_prompt
 # ---------------------------------------------------------------------------
 
@@ -515,6 +604,13 @@ class TestBuildPremarketPrompt:
         prompt = build_premarket_prompt("2026-02-09", regime, corr_1d)
         assert "S&P 500" in prompt
         assert "Nasdaq 100" in prompt
+
+    def test_contains_diverging_section(self):
+        pair = _make_diverging_pair()
+        corr_1d = _make_corr(diverging=[pair])
+        regime = _make_regime()
+        prompt = build_premarket_prompt("2026-02-09", regime, corr_1d)
+        assert "normally correlated" in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -588,6 +684,14 @@ class TestBuildClosePrompt:
         prompt = build_close_prompt("2026-02-09", regime, corr_1d, corr_1m)
         assert "1D anomaly detected" in prompt
         assert "1M anomaly detected" in prompt
+
+    def test_contains_diverging_section(self):
+        pair = _make_diverging_pair()
+        corr_1d = _make_corr(diverging=[pair])
+        corr_1m = _make_corr(period="1M")
+        regime = _make_regime()
+        prompt = build_close_prompt("2026-02-09", regime, corr_1d, corr_1m)
+        assert "normally correlated" in prompt
 
 
 # ---------------------------------------------------------------------------
@@ -755,6 +859,24 @@ class TestGeneratePremarket:
                          "regime_label", "regime_reason", "timestamp"}
         assert required_keys == set(result.keys())
 
+    @pytest.mark.asyncio
+    async def test_moving_together_includes_diverging(self):
+        mock_client = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="Summary.")]
+        mock_client.messages.create.return_value = mock_response
+
+        group = _make_group(direction="up", avg_change_pct=2.0, symbols=["SPX", "NDX"])
+        pair = _make_diverging_pair()
+        regime = _make_regime()
+        corr_1d = _make_corr(groups=[group], diverging=[pair])
+
+        result = await generate_premarket(regime, corr_1d, client=mock_client)
+
+        labels = [m["label"] for m in result["moving_together"]]
+        assert "Rallying together" in labels
+        assert "Diverging" in labels
+
 
 # ---------------------------------------------------------------------------
 # generate_close
@@ -844,6 +966,25 @@ class TestGenerateClose:
         assert "Monthly co-movement:" in result["summary_text"]
         assert "S&P 500" in result["summary_text"]
 
+    @pytest.mark.asyncio
+    async def test_moving_together_includes_diverging(self):
+        mock_client = AsyncMock()
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="Summary.")]
+        mock_client.messages.create.return_value = mock_response
+
+        group = _make_group(direction="down", avg_change_pct=-1.5, symbols=["WTI", "XCU"])
+        pair = _make_diverging_pair()
+        regime = _make_regime()
+        corr_1d = _make_corr(groups=[group], diverging=[pair])
+        corr_1m = _make_corr(period="1M")
+
+        result = await generate_close(regime, corr_1d, corr_1m, client=mock_client)
+
+        labels = [m["label"] for m in result["moving_together"]]
+        assert "Selling together" in labels
+        assert "Diverging" in labels
+
 
 # ---------------------------------------------------------------------------
 # _build_fallback_summary
@@ -909,6 +1050,19 @@ class TestBuildFallbackSummary:
         assert "MIXED" in result
         assert "Insufficient data" in result
 
+    def test_includes_diverging_when_present(self):
+        pair = _make_diverging_pair()
+        corr_1d = _make_corr(diverging=[pair])
+        regime = _make_regime()
+        result = _build_fallback_summary("premarket", regime, corr_1d)
+        assert "Diverging:" in result
+
+    def test_no_diverging_section_when_empty(self):
+        corr_1d = _make_corr(diverging=[])
+        regime = _make_regime()
+        result = _build_fallback_summary("premarket", regime, corr_1d)
+        assert "Diverging:" not in result
+
 
 # ---------------------------------------------------------------------------
 # Config consistency
@@ -941,6 +1095,7 @@ class TestSummaryConfig:
             "{regime_label}",
             "{regime_reason}",
             "{comovement_summary}",
+            "{diverging_1d}",
             "{anomalies_summary}",
         ]
         for ph in required_placeholders:
@@ -954,6 +1109,7 @@ class TestSummaryConfig:
             "{regime_reason}",
             "{regime_signals}",
             "{comovement_1d}",
+            "{diverging_1d}",
             "{comovement_1m}",
             "{anomalies_1d}",
             "{anomalies_1m}",

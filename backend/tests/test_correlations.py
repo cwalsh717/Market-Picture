@@ -20,11 +20,13 @@ import aiosqlite
 import pytest
 
 from backend.intelligence.correlations import (
+    DivergingPair,
     _align_returns,
     _compute_correlation_matrix,
     _compute_daily_returns,
     _detect_1d_anomalies,
     _detect_broken_correlations,
+    _detect_diverging_pairs,
     _detect_scarcity_divergence,
     _detect_unexpected_convergence,
     _get_all_latest_snapshots,
@@ -451,6 +453,87 @@ class TestDetect1dAnomalies:
 
 
 # ---------------------------------------------------------------------------
+# _detect_diverging_pairs
+# ---------------------------------------------------------------------------
+
+
+class TestDetectDivergingPairs:
+    def test_opposite_direction_detected(self):
+        """NDX up, SPX down with high baseline r=0.90 should flag a diverging pair."""
+        snapshots = {
+            "NDX": {"change_pct": 2.0},
+            "SPX": {"change_pct": -1.5},
+        }
+        pairs = _detect_diverging_pairs(snapshots)
+        assert len(pairs) == 1
+        assert pairs[0]["symbol_a"] == "NDX"
+        assert pairs[0]["symbol_b"] == "SPX"
+
+    def test_same_direction_not_flagged(self):
+        """Both NDX and SPX up -- same direction should not produce a diverging pair."""
+        snapshots = {
+            "NDX": {"change_pct": 2.0},
+            "SPX": {"change_pct": 1.5},
+        }
+        pairs = _detect_diverging_pairs(snapshots)
+        assert pairs == []
+
+    def test_flat_assets_skipped(self):
+        """Changes below comovement_min_change_pct (0.3) should be ignored."""
+        snapshots = {
+            "NDX": {"change_pct": 0.1},
+            "SPX": {"change_pct": -0.1},
+        }
+        pairs = _detect_diverging_pairs(snapshots)
+        assert pairs == []
+
+    def test_low_baseline_not_flagged(self):
+        """BTC/SPX baseline is 0.10, below diverging_baseline_threshold (0.5)."""
+        snapshots = {
+            "BTC/USD": {"change_pct": 3.0},
+            "SPX": {"change_pct": -2.0},
+        }
+        pairs = _detect_diverging_pairs(snapshots)
+        # No pair should be flagged because baseline r=0.10 < threshold 0.5
+        btc_spx = [
+            p for p in pairs
+            if set([p["symbol_a"], p["symbol_b"]]) == {"BTC/USD", "SPX"}
+        ]
+        assert btc_spx == []
+
+    def test_missing_snapshots_handled(self):
+        """Only one asset in snapshots -- should not crash, return empty list."""
+        snapshots = {
+            "SPX": {"change_pct": 2.0},
+        }
+        pairs = _detect_diverging_pairs(snapshots)
+        assert pairs == []
+
+    def test_none_change_pct_handled(self):
+        """NDX has change_pct=None -- should not crash, return empty list."""
+        snapshots = {
+            "NDX": {"change_pct": None},
+            "SPX": {"change_pct": -1.5},
+        }
+        pairs = _detect_diverging_pairs(snapshots)
+        assert pairs == []
+
+    def test_output_structure(self):
+        """Verify that DivergingPair dict has all expected keys."""
+        snapshots = {
+            "NDX": {"change_pct": 2.0},
+            "SPX": {"change_pct": -1.5},
+        }
+        pairs = _detect_diverging_pairs(snapshots)
+        assert len(pairs) >= 1
+        expected_keys = {
+            "symbol_a", "symbol_b", "label_a", "label_b",
+            "change_pct_a", "change_pct_b", "baseline_r",
+        }
+        assert set(pairs[0].keys()) == expected_keys
+
+
+# ---------------------------------------------------------------------------
 # _get_all_latest_snapshots (async, DB)
 # ---------------------------------------------------------------------------
 
@@ -605,6 +688,7 @@ class TestDetectCorrelations:
         # SPX and VIX both up should produce an anomaly.
         types = [a["anomaly_type"] for a in result["anomalies"]]
         assert "broken_correlation" in types
+        assert isinstance(result["diverging"], list)
 
     @pytest.mark.asyncio
     async def test_1m_with_sufficient_history(self, tmp_path):
@@ -668,7 +752,7 @@ class TestDetectCorrelations:
             await conn.close()
 
         required_keys = {"period", "timestamp", "data_points", "groups",
-                         "anomalies", "notable_pairs"}
+                         "anomalies", "notable_pairs", "diverging"}
         assert required_keys == set(result.keys())
 
 
@@ -686,6 +770,7 @@ class TestCorrelationConfig:
             "anomaly_deviation_threshold",
             "comovement_magnitude_band",
             "comovement_min_change_pct",
+            "diverging_baseline_threshold",
         ]
         for key in required:
             assert key in CORRELATION_CONFIG, f"Missing config key: {key}"

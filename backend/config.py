@@ -144,6 +144,7 @@ CORRELATION_CONFIG: dict[str, float] = {
     "anomaly_deviation_threshold": 0.4,  # |actual − expected| to flag anomaly
     "comovement_magnitude_band": 1.5,    # Pct-point band for 1D grouping
     "comovement_min_change_pct": 0.3,    # Filter flat assets in 1D mode
+    "diverging_baseline_threshold": 0.5,  # Pairs with baseline r above this are "normally correlated"
 }
 
 # Expected baseline correlations (long-run approximations).
@@ -204,6 +205,7 @@ PREMARKET_USER_TEMPLATE: str = (
     "Crypto (24/7):\n{crypto_data}\n\n"
     "Current regime: {regime_label} — {regime_reason}\n\n"
     "Co-movement groups:\n{comovement_summary}\n\n"
+    "Diverging (normally correlated, moving opposite today):\n{diverging_1d}\n\n"
     "Anomalies:\n{anomalies_summary}\n\n"
     "Cover: (1) overnight international moves, (2) crypto, "
     "(3) what regime and correlations suggest to watch today."
@@ -214,6 +216,7 @@ CLOSE_USER_TEMPLATE: str = (
     "Regime: {regime_label} — {regime_reason}\n"
     "Signals:\n{regime_signals}\n\n"
     "Today's co-movement (1D):\n{comovement_1d}\n\n"
+    "Diverging (normally correlated, moving opposite today):\n{diverging_1d}\n\n"
     "Monthly co-movement (1M):\n{comovement_1m}\n\n"
     "Anomalies:\n{anomalies_1d}\n{anomalies_1m}\n\n"
     "Scarcity vs abundance:\n{scarcity_summary}\n\n"

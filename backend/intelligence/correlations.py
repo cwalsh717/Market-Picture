@@ -49,6 +49,18 @@ class CorrelationAnomaly(TypedDict):
     detail: str
 
 
+class DivergingPair(TypedDict):
+    """A pair of normally-correlated assets moving in opposite directions."""
+
+    symbol_a: str
+    symbol_b: str
+    label_a: str           # human-readable
+    label_b: str
+    change_pct_a: float
+    change_pct_b: float
+    baseline_r: float      # expected correlation
+
+
 class PairCorrelation(TypedDict):
     """Correlation between one asset pair."""
 
@@ -67,6 +79,7 @@ class CorrelationResult(TypedDict):
     groups: list[CoMovingGroup]
     anomalies: list[CorrelationAnomaly]
     notable_pairs: list[PairCorrelation]
+    diverging: list[DivergingPair]
 
 
 # ---------------------------------------------------------------------------
@@ -516,6 +529,45 @@ def _detect_1d_anomalies(
     return anomalies
 
 
+def _detect_diverging_pairs(
+    snapshots: dict[str, dict],
+) -> list[DivergingPair]:
+    """Detect normally-correlated pairs moving in opposite directions today."""
+    min_change = CORRELATION_CONFIG["comovement_min_change_pct"]
+    threshold = CORRELATION_CONFIG["diverging_baseline_threshold"]
+    result: list[DivergingPair] = []
+
+    for (sym_a, sym_b), expected in BASELINE_CORRELATIONS.items():
+        if expected < threshold:
+            continue
+        snap_a = snapshots.get(sym_a)
+        snap_b = snapshots.get(sym_b)
+        if snap_a is None or snap_b is None:
+            continue
+        pct_a = snap_a.get("change_pct")
+        pct_b = snap_b.get("change_pct")
+        if pct_a is None or pct_b is None:
+            continue
+        if abs(pct_a) < min_change or abs(pct_b) < min_change:
+            continue
+
+        same_direction = (pct_a > 0 and pct_b > 0) or (pct_a < 0 and pct_b < 0)
+        if same_direction:
+            continue
+
+        result.append(DivergingPair(
+            symbol_a=sym_a,
+            symbol_b=sym_b,
+            label_a=_label(sym_a),
+            label_b=_label(sym_b),
+            change_pct_a=pct_a,
+            change_pct_b=pct_b,
+            baseline_r=expected,
+        ))
+
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -539,6 +591,7 @@ async def detect_correlations(
         snapshots = await _get_all_latest_snapshots(conn)
         groups = _group_by_comovement(snapshots)
         anomalies = _detect_1d_anomalies(snapshots)
+        diverging = _detect_diverging_pairs(snapshots)
         return CorrelationResult(
             period="1D",
             timestamp=now,
@@ -546,6 +599,7 @@ async def detect_correlations(
             groups=groups,
             anomalies=anomalies,
             notable_pairs=[],
+            diverging=diverging,
         )
 
     # Multi-day correlation path.
@@ -568,6 +622,7 @@ async def detect_correlations(
             groups=[],
             anomalies=[],
             notable_pairs=[],
+            diverging=[],
         )
 
     pair_correlations = _compute_correlation_matrix(returns_by_symbol)
@@ -596,4 +651,5 @@ async def detect_correlations(
         groups=groups,
         anomalies=anomalies,
         notable_pairs=notable,
+        diverging=[],
     )
