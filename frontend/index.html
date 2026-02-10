@@ -59,6 +59,37 @@
         <!-- Narrative -->
         <section id="narrative-section" class="mb-10"></section>
 
+        <!-- Search -->
+        <section id="search-section" class="mb-10">
+          <div class="relative">
+            <input
+              id="search-input"
+              type="text"
+              placeholder="Search any ticker… e.g. AAPL"
+              class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-gray-100 placeholder-gray-500 focus:outline-none focus:border-gray-500 transition-colors"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <div id="search-spinner" class="hidden absolute right-3 top-3.5">
+              <svg class="animate-spin h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+            </div>
+          </div>
+          <div id="search-result" class="hidden mt-3 border border-gray-700 bg-gray-900/50 rounded-lg p-4">
+            <div class="flex items-baseline justify-between flex-wrap gap-2">
+              <span id="search-symbol" class="text-lg font-bold"></span>
+              <span id="search-price" class="text-lg text-gray-200"></span>
+            </div>
+            <div class="mt-1">
+              <span id="search-change" class="text-sm font-medium"></span>
+            </div>
+            <p id="search-timestamp" class="text-xs text-gray-500 mt-2"></p>
+          </div>
+          <p id="search-error" class="hidden mt-3 text-sm text-gray-500"></p>
+        </section>
+
         <!-- Moving together -->
         <section id="moving-together-section"></section>
 

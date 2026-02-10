@@ -155,6 +155,84 @@ function escapeAttr(str) {
 }
 
 // ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+
+function debounce(fn, ms = 300) {
+  let timer;
+  return function (...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(this, args), ms);
+  };
+}
+
+async function searchTicker(query) {
+  const resp = await fetch(`${API_BASE}/api/search/${encodeURIComponent(query)}`);
+  if (resp.status === 404) return null;
+  if (!resp.ok) throw new Error(`Search error: ${resp.status}`);
+  return resp.json();
+}
+
+function renderSearchResult(data) {
+  const resultEl = document.getElementById("search-result");
+  const errorEl = document.getElementById("search-error");
+  errorEl.classList.add("hidden");
+
+  document.getElementById("search-symbol").textContent = data.symbol;
+  document.getElementById("search-price").textContent = Number(data.price).toFixed(2);
+
+  const changeEl = document.getElementById("search-change");
+  const pct = Number(data.change_pct);
+  const abs = Number(data.change_abs);
+  const positive = pct >= 0;
+  const arrow = positive ? "\u25B2" : "\u25BC";
+  const sign = positive ? "+" : "";
+  changeEl.textContent = `${arrow} ${sign}${abs.toFixed(2)} (${sign}${pct.toFixed(2)}%)`;
+  changeEl.className = `text-sm font-medium ${positive ? "text-emerald-400" : "text-red-400"}`;
+
+  document.getElementById("search-timestamp").textContent = `Last updated: ${data.timestamp}`;
+  resultEl.classList.remove("hidden");
+}
+
+function clearSearchResult() {
+  document.getElementById("search-result").classList.add("hidden");
+  document.getElementById("search-error").classList.add("hidden");
+}
+
+function setSearchLoading(on) {
+  const spinner = document.getElementById("search-spinner");
+  if (on) spinner.classList.remove("hidden");
+  else spinner.classList.add("hidden");
+}
+
+async function handleSearch(query) {
+  const trimmed = query.trim().toUpperCase();
+  if (!trimmed) {
+    clearSearchResult();
+    return;
+  }
+  setSearchLoading(true);
+  clearSearchResult();
+  try {
+    const data = await searchTicker(trimmed);
+    if (!data) {
+      const errorEl = document.getElementById("search-error");
+      errorEl.textContent = `No results for "${trimmed}"`;
+      errorEl.classList.remove("hidden");
+    } else {
+      renderSearchResult(data);
+    }
+  } catch (err) {
+    console.error("Search failed:", err);
+    const errorEl = document.getElementById("search-error");
+    errorEl.textContent = "Search unavailable. Please try again later.";
+    errorEl.classList.remove("hidden");
+  } finally {
+    setSearchLoading(false);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 
@@ -175,6 +253,19 @@ async function init() {
   } catch (err) {
     console.error("Failed to load summary:", err);
     showError("Unable to load market data. Please try again later.");
+  }
+
+  // Wire search
+  const searchInput = document.getElementById("search-input");
+  if (searchInput) {
+    const debouncedSearch = debounce((e) => handleSearch(e.target.value));
+    searchInput.addEventListener("input", debouncedSearch);
+    searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        handleSearch(searchInput.value);
+      }
+    });
   }
 }
 
