@@ -184,6 +184,19 @@ class TwelveDataProvider(DataProvider):
             logger.error("get_all_quotes failed: %s", exc)
             return {}
 
+    async def get_quotes_for_symbols(self, symbols: list[str]) -> dict[str, dict]:
+        """Batch-fetch quotes for a specific list of symbols in one HTTP call."""
+        if not symbols:
+            return {}
+        try:
+            raw = await self._request(
+                "/quote", {"symbol": ",".join(symbols)}
+            )
+            return _parse_batch_quotes(raw, symbols)
+        except (httpx.HTTPError, TwelveDataError, KeyError, ValueError) as exc:
+            logger.error("get_quotes_for_symbols failed: %s", exc)
+            return {}
+
     async def get_history(self, symbol: str, period: str) -> list[dict]:
         """Fetch historical OHLCV bars for a symbol over a given period."""
         try:

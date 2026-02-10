@@ -88,3 +88,47 @@ FRED_SERIES: dict[str, str] = {
     "BAMLC0A0CM": "IG Corporate Bond Spread",
     "BAMLH0A0HYM2": "HY Corporate Bond Spread",
 }
+
+# ---------------------------------------------------------------------------
+# Symbol → market region mapping (for scheduler market-hours checks)
+# ---------------------------------------------------------------------------
+# "24/7" means always active (crypto).
+# Other values must be keys in MARKET_HOURS.
+SYMBOL_MARKET_MAP: dict[str, str] = {
+    # Equities (US hours)
+    "SPX": "US",
+    "NDX": "US",
+    "RUT": "US",
+    "VIX": "US",
+    # International
+    "NKY": "Japan",
+    "UKX": "UK",
+    "SX5E": "Europe",
+    "HSI": "HK",
+    # Currencies (US hours)
+    "DXY": "US",
+    # Commodities (US hours)
+    "WTI": "US",
+    "NG": "US",
+    "XAU": "US",
+    "XCU": "US",
+    # Critical minerals (US-listed ETFs)
+    "URA": "US",
+    "LIT": "US",
+    "REMX": "US",
+    # Crypto (24/7)
+    "BTC/USD": "24/7",
+    "ETH/USD": "24/7",
+}
+
+# ---------------------------------------------------------------------------
+# Symbol → asset class mapping (derived from ASSETS, for DB writes)
+# ---------------------------------------------------------------------------
+SYMBOL_ASSET_CLASS: dict[str, str] = {
+    symbol: asset_class
+    for asset_class, symbols in ASSETS.items()
+    for symbol in symbols
+}
+for _series_id in FRED_SERIES:
+    SYMBOL_ASSET_CLASS[_series_id] = "rates"
+SYMBOL_ASSET_CLASS["SPREAD_2S10S"] = "rates"
