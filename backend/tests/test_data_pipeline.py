@@ -11,18 +11,21 @@ Covers:
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 from zoneinfo import ZoneInfo
 
 import aiosqlite
 import pytest
 
 from backend.config import SYMBOL_ASSET_CLASS, SYMBOL_MARKET_MAP
-from backend.db import init_db
+from backend.db import _migrate_summaries_table, init_db
 from backend.jobs.daily_update import (
     fetch_fred_quotes,
     fetch_twelve_data_quotes,
+    generate_close_summary,
+    generate_premarket_summary,
     get_active_symbols,
     is_market_open,
     save_quotes,
@@ -68,6 +71,17 @@ async def _init_temp_db(db_path: str):
                 change_abs  REAL,
                 timestamp   TEXT    NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS summaries (
+                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                date                 TEXT    NOT NULL,
+                period               TEXT    NOT NULL,
+                summary_text         TEXT,
+                regime_label         TEXT,
+                regime_reason        TEXT,
+                regime_signals_json  TEXT,
+                moving_together_json TEXT,
+                correlations_json    TEXT
+            );
         """)
         await conn.commit()
 
@@ -77,6 +91,15 @@ async def _read_snapshots(db_path: str) -> list[dict]:
     async with aiosqlite.connect(db_path) as conn:
         conn.row_factory = aiosqlite.Row
         cursor = await conn.execute("SELECT * FROM market_snapshots ORDER BY id")
+        rows = await cursor.fetchall()
+        return [dict(r) for r in rows]
+
+
+async def _read_summaries(db_path: str) -> list[dict]:
+    """Read all rows from summaries."""
+    async with aiosqlite.connect(db_path) as conn:
+        conn.row_factory = aiosqlite.Row
+        cursor = await conn.execute("SELECT * FROM summaries ORDER BY id")
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]
 
@@ -412,3 +435,241 @@ class TestConfigConsistency:
             assert market == "24/7" or market in MARKET_HOURS, (
                 f"{symbol} maps to unknown market '{market}'"
             )
+
+
+# ---------------------------------------------------------------------------
+# Fake intelligence data for summary persistence tests
+# ---------------------------------------------------------------------------
+
+_FAKE_REGIME = {
+    "label": "RISK-ON",
+    "reason": "Broad risk appetite",
+    "signals": [
+        {"name": "spx_trend", "direction": "risk_on", "detail": "S&P above 20-day MA"},
+        {"name": "vix_level", "direction": "risk_on", "detail": "VIX 14 < 20"},
+    ],
+}
+
+_FAKE_CORR_1D = {
+    "period": "1D",
+    "timestamp": "2025-01-06T16:00:00+00:00",
+    "data_points": 50,
+    "groups": [
+        {
+            "direction": "up",
+            "avg_change_pct": 1.5,
+            "symbols": ["SPX", "NDX"],
+            "labels": ["S&P 500", "Nasdaq 100"],
+        }
+    ],
+    "anomalies": [],
+    "notable_pairs": [],
+    "diverging": [],
+}
+
+_FAKE_CORR_1M = {
+    "period": "1M",
+    "timestamp": "2025-01-06T16:00:00+00:00",
+    "data_points": 200,
+    "groups": [],
+    "anomalies": [],
+    "notable_pairs": [],
+    "diverging": [],
+}
+
+_FAKE_SUMMARY_PREMARKET = {
+    "period": "premarket",
+    "summary_text": "Markets are calm overnight.",
+    "moving_together": [
+        {"label": "Rallying together", "assets": ["S&P 500", "Nasdaq 100"], "detail": "Up avg 1.5%"},
+    ],
+    "regime_label": "RISK-ON",
+    "regime_reason": "Broad risk appetite",
+    "timestamp": "2025-01-06T12:00:00+00:00",
+}
+
+_FAKE_SUMMARY_CLOSE = {
+    "period": "close",
+    "summary_text": "A strong day across equities.",
+    "moving_together": [
+        {"label": "Rallying together", "assets": ["S&P 500", "Nasdaq 100"], "detail": "Up avg 1.5%"},
+    ],
+    "regime_label": "RISK-ON",
+    "regime_reason": "Broad risk appetite",
+    "timestamp": "2025-01-06T21:00:00+00:00",
+}
+
+
+# ---------------------------------------------------------------------------
+# Summary persistence
+# ---------------------------------------------------------------------------
+
+
+class TestSummaryPersistence:
+    """Verify generate_premarket_summary and generate_close_summary persist
+    all 8 columns correctly, including frontend-ready moving_together_json."""
+
+    @pytest.mark.asyncio
+    async def test_premarket_persists_all_columns(self, tmp_path, monkeypatch):
+        db_path = str(tmp_path / "test.db")
+        fixed_time = datetime(2025, 1, 6, 8, 0, tzinfo=_ET)
+        monkeypatch.setattr(
+            "backend.jobs.daily_update.datetime",
+            type("MockDT", (), {
+                "now": staticmethod(lambda tz: fixed_time),
+                "strptime": datetime.strptime,
+            })(),
+        )
+
+        with patch("backend.intelligence.regime.classify_regime", new_callable=AsyncMock) as mock_regime, \
+             patch("backend.intelligence.correlations.detect_correlations", new_callable=AsyncMock) as mock_corr, \
+             patch("backend.intelligence.summary.generate_premarket", new_callable=AsyncMock) as mock_gen:
+            mock_regime.return_value = _FAKE_REGIME
+            mock_corr.return_value = _FAKE_CORR_1D
+            mock_gen.return_value = _FAKE_SUMMARY_PREMARKET
+
+            await generate_premarket_summary()
+
+        rows = await _read_summaries(db_path)
+        assert len(rows) == 1
+        row = rows[0]
+
+        assert row["date"] == "2025-01-06"
+        assert row["period"] == "premarket"
+        assert row["summary_text"] == "Markets are calm overnight."
+        assert row["regime_label"] == "RISK-ON"
+        assert row["regime_reason"] == "Broad risk appetite"
+
+        # regime_signals_json should contain the signal breakdowns
+        signals = json.loads(row["regime_signals_json"])
+        assert len(signals) == 2
+        assert signals[0]["name"] == "spx_trend"
+
+        # moving_together_json should be frontend-ready (label/assets/detail)
+        moving = json.loads(row["moving_together_json"])
+        assert len(moving) == 1
+        assert moving[0]["label"] == "Rallying together"
+        assert "S&P 500" in moving[0]["assets"]
+        assert "detail" in moving[0]
+
+        # correlations_json should contain raw correlation data
+        corr = json.loads(row["correlations_json"])
+        assert "1D" in corr
+        assert corr["1D"]["period"] == "1D"
+
+    @pytest.mark.asyncio
+    async def test_close_persists_all_columns(self, tmp_path, monkeypatch):
+        db_path = str(tmp_path / "test.db")
+        fixed_time = datetime(2025, 1, 6, 16, 30, tzinfo=_ET)
+        monkeypatch.setattr(
+            "backend.jobs.daily_update.datetime",
+            type("MockDT", (), {
+                "now": staticmethod(lambda tz: fixed_time),
+                "strptime": datetime.strptime,
+            })(),
+        )
+
+        call_count = {"n": 0}
+
+        async def _mock_detect_correlations(conn, period="1D"):
+            call_count["n"] += 1
+            if period == "1D":
+                return _FAKE_CORR_1D
+            return _FAKE_CORR_1M
+
+        with patch("backend.intelligence.regime.classify_regime", new_callable=AsyncMock) as mock_regime, \
+             patch("backend.intelligence.correlations.detect_correlations", side_effect=_mock_detect_correlations) as mock_corr, \
+             patch("backend.intelligence.summary.generate_close", new_callable=AsyncMock) as mock_gen:
+            mock_regime.return_value = _FAKE_REGIME
+            mock_gen.return_value = _FAKE_SUMMARY_CLOSE
+
+            await generate_close_summary()
+
+        rows = await _read_summaries(db_path)
+        assert len(rows) == 1
+        row = rows[0]
+
+        assert row["period"] == "close"
+        assert row["summary_text"] == "A strong day across equities."
+
+        signals = json.loads(row["regime_signals_json"])
+        assert len(signals) == 2
+
+        moving = json.loads(row["moving_together_json"])
+        assert moving[0]["label"] == "Rallying together"
+
+        corr = json.loads(row["correlations_json"])
+        assert "1D" in corr
+        assert "1M" in corr
+        assert corr["1M"]["period"] == "1M"
+
+
+# ---------------------------------------------------------------------------
+# Summaries table migration
+# ---------------------------------------------------------------------------
+
+
+class TestSummariesMigration:
+    """Verify _migrate_summaries_table adds missing columns and is idempotent."""
+
+    @pytest.mark.asyncio
+    async def test_adds_columns_to_old_schema(self, tmp_path):
+        """Starting from a schema without the new columns, migration adds them."""
+        db_path = str(tmp_path / "migrate.db")
+        async with aiosqlite.connect(db_path) as conn:
+            await conn.execute("""
+                CREATE TABLE summaries (
+                    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date                 TEXT    NOT NULL,
+                    period               TEXT    NOT NULL,
+                    summary_text         TEXT,
+                    regime_label         TEXT,
+                    regime_reason        TEXT,
+                    moving_together_json TEXT
+                )
+            """)
+            await _migrate_summaries_table(conn)
+            await conn.commit()
+
+            # Verify new columns exist by inserting a row that uses them
+            await conn.execute(
+                """
+                INSERT INTO summaries
+                    (date, period, summary_text, regime_label, regime_reason,
+                     regime_signals_json, moving_together_json, correlations_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("2025-01-06", "premarket", "test", "RISK-ON", "test",
+                 '[]', '[]', '{}'),
+            )
+            await conn.commit()
+
+            cursor = await conn.execute("SELECT regime_signals_json, correlations_json FROM summaries")
+            row = await cursor.fetchone()
+            assert row[0] == "[]"
+            assert row[1] == "{}"
+
+    @pytest.mark.asyncio
+    async def test_migration_is_idempotent(self, tmp_path):
+        """Running migration twice on the same DB doesn't fail."""
+        db_path = str(tmp_path / "migrate2.db")
+        async with aiosqlite.connect(db_path) as conn:
+            await conn.execute("""
+                CREATE TABLE summaries (
+                    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+                    date                 TEXT    NOT NULL,
+                    period               TEXT    NOT NULL,
+                    summary_text         TEXT,
+                    regime_label         TEXT,
+                    regime_reason        TEXT,
+                    moving_together_json TEXT
+                )
+            """)
+            await _migrate_summaries_table(conn)
+            await _migrate_summaries_table(conn)  # second call should not fail
+            await conn.commit()
+
+            cursor = await conn.execute("PRAGMA table_info(summaries)")
+            cols = {row[1] for row in await cursor.fetchall()}
+            assert "regime_signals_json" in cols
+            assert "correlations_json" in cols

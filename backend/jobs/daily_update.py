@@ -187,14 +187,13 @@ async def generate_premarket_summary() -> None:
         logger.info("Pre-market regime: %s | %s", regime["label"], regime["reason"])
 
         today = datetime.now(_ET).date().isoformat()
-        moving_together = json.dumps({"1D": corr_1d})
 
         await conn.execute(
             """
             INSERT INTO summaries
                 (date, period, summary_text, regime_label, regime_reason,
-                 moving_together_json)
-            VALUES (?, ?, ?, ?, ?, ?)
+                 regime_signals_json, moving_together_json, correlations_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 today,
@@ -202,7 +201,9 @@ async def generate_premarket_summary() -> None:
                 summary["summary_text"],
                 regime["label"],
                 regime["reason"],
-                moving_together,
+                json.dumps(regime["signals"]),
+                json.dumps(summary["moving_together"]),
+                json.dumps({"1D": corr_1d}),
             ),
         )
         await conn.commit()
@@ -245,14 +246,13 @@ async def generate_close_summary() -> None:
         summary = await generate_close(regime, corr_1d, corr_1m)
 
         today = datetime.now(_ET).date().isoformat()
-        moving_together = json.dumps({"1D": corr_1d, "1M": corr_1m})
 
         await conn.execute(
             """
             INSERT INTO summaries
                 (date, period, summary_text, regime_label, regime_reason,
-                 moving_together_json)
-            VALUES (?, ?, ?, ?, ?, ?)
+                 regime_signals_json, moving_together_json, correlations_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 today,
@@ -260,7 +260,9 @@ async def generate_close_summary() -> None:
                 summary["summary_text"],
                 regime["label"],
                 regime["reason"],
-                moving_together,
+                json.dumps(regime["signals"]),
+                json.dumps(summary["moving_together"]),
+                json.dumps({"1D": corr_1d, "1M": corr_1m}),
             ),
         )
         await conn.commit()
