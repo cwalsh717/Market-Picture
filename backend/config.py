@@ -179,3 +179,44 @@ BASELINE_CORRELATIONS: dict[tuple[str, str], float] = {
     ("SPX", "XAU"): -0.10,
     ("SPX", "XCU"): 0.50,
 }
+
+# ---------------------------------------------------------------------------
+# LLM summary settings
+# ---------------------------------------------------------------------------
+SUMMARY_CONFIG: dict[str, object] = {
+    "model": "claude-sonnet-4-5-20250929",
+    "max_tokens": 1024,
+    "temperature": 0.3,
+}
+
+SUMMARY_SYSTEM_PROMPT: str = (
+    "You are a market analyst writing for a general audience. "
+    "Explain cross-asset market moves in plain English, no jargon. "
+    "Focus on the narrative: what is moving together and why it matters. "
+    "Mention the scarcity vs abundance theme (critical minerals — uranium, "
+    "lithium, rare earths) when relevant. "
+    "Keep to 3-5 concise paragraphs of flowing prose. No bullet points or headers."
+)
+
+PREMARKET_USER_TEMPLATE: str = (
+    "Write a pre-market briefing for {date}.\n\n"
+    "Overnight & international moves:\n{overnight_data}\n\n"
+    "Crypto (24/7):\n{crypto_data}\n\n"
+    "Current regime: {regime_label} — {regime_reason}\n\n"
+    "Co-movement groups:\n{comovement_summary}\n\n"
+    "Anomalies:\n{anomalies_summary}\n\n"
+    "Cover: (1) overnight international moves, (2) crypto, "
+    "(3) what regime and correlations suggest to watch today."
+)
+
+CLOSE_USER_TEMPLATE: str = (
+    "Write an after-close market summary for {date}.\n\n"
+    "Regime: {regime_label} — {regime_reason}\n"
+    "Signals:\n{regime_signals}\n\n"
+    "Today's co-movement (1D):\n{comovement_1d}\n\n"
+    "Monthly co-movement (1M):\n{comovement_1m}\n\n"
+    "Anomalies:\n{anomalies_1d}\n{anomalies_1m}\n\n"
+    "Scarcity vs abundance:\n{scarcity_summary}\n\n"
+    "Cover: (1) regime and what drove it, (2) what moved together/diverged, "
+    "(3) scarcity theme, (4) what this means for someone watching markets."
+)

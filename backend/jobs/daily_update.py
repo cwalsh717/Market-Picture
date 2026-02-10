@@ -167,22 +167,62 @@ async def fetch_fred_quotes(provider: FredProvider) -> None:
 async def generate_premarket_summary() -> None:
     """Generate the pre-market LLM summary (~8:00 AM ET).
 
-    Placeholder -- will be implemented in the intelligence module.
-    """
-    logger.info("Pre-market summary job triggered (not yet implemented)")
-
-
-async def generate_close_summary() -> None:
-    """Generate the after-close LLM summary (~4:30 PM ET).
-
-    Computes regime classification and cross-asset correlations, then
-    persists to the summaries table.  LLM narrative generation will be
-    added later.
+    Computes regime classification and overnight correlations, generates
+    a narrative via the Claude API, and persists to the summaries table.
     """
     import json
 
     from backend.intelligence.correlations import detect_correlations
     from backend.intelligence.regime import classify_regime
+    from backend.intelligence.summary import generate_premarket
+
+    logger.info("Pre-market summary job triggered")
+
+    conn = await get_connection()
+    try:
+        regime = await classify_regime(conn)
+        corr_1d = await detect_correlations(conn, period="1D")
+
+        summary = await generate_premarket(regime, corr_1d)
+        logger.info("Pre-market regime: %s | %s", regime["label"], regime["reason"])
+
+        today = datetime.now(_ET).date().isoformat()
+        moving_together = json.dumps({"1D": corr_1d})
+
+        await conn.execute(
+            """
+            INSERT INTO summaries
+                (date, period, summary_text, regime_label, regime_reason,
+                 moving_together_json)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                today,
+                "premarket",
+                summary["summary_text"],
+                regime["label"],
+                regime["reason"],
+                moving_together,
+            ),
+        )
+        await conn.commit()
+    except Exception:
+        logger.exception("Failed to generate premarket summary")
+    finally:
+        await conn.close()
+
+
+async def generate_close_summary() -> None:
+    """Generate the after-close LLM summary (~4:30 PM ET).
+
+    Computes regime classification and cross-asset correlations, generates
+    a narrative via the Claude API, and persists to the summaries table.
+    """
+    import json
+
+    from backend.intelligence.correlations import detect_correlations
+    from backend.intelligence.regime import classify_regime
+    from backend.intelligence.summary import generate_close
 
     logger.info("After-close summary job triggered")
 
@@ -202,16 +242,26 @@ async def generate_close_summary() -> None:
             len(corr_1m["anomalies"]),
         )
 
-        moving_together = json.dumps({"1D": corr_1d, "1M": corr_1m})
+        summary = await generate_close(regime, corr_1d, corr_1m)
 
         today = datetime.now(_ET).date().isoformat()
+        moving_together = json.dumps({"1D": corr_1d, "1M": corr_1m})
+
         await conn.execute(
             """
             INSERT INTO summaries
-                (date, period, regime_label, regime_reason, moving_together_json)
-            VALUES (?, ?, ?, ?, ?)
+                (date, period, summary_text, regime_label, regime_reason,
+                 moving_together_json)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (today, "close", regime["label"], regime["reason"], moving_together),
+            (
+                today,
+                "close",
+                summary["summary_text"],
+                regime["label"],
+                regime["reason"],
+                moving_together,
+            ),
         )
         await conn.commit()
     except Exception:
