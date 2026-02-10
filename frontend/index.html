@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Market Picture</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <div class="max-w-4xl mx-auto px-4 py-6">
+
+    <!-- Header -->
+    <header class="flex items-center justify-between mb-8">
+      <h1 class="text-2xl font-bold tracking-tight">Market Picture</h1>
+      <div id="header-meta" class="text-sm text-gray-400"></div>
+    </header>
+
+    <!-- Main content -->
+    <main id="app">
+
+      <!-- Loading skeleton -->
+      <div id="loading">
+        <div class="mb-8">
+          <div class="skeleton h-10 w-36 rounded-lg mb-3"></div>
+          <div class="skeleton h-4 w-64 rounded mb-2"></div>
+          <div class="flex gap-2 mt-3">
+            <div class="skeleton h-6 w-24 rounded-full"></div>
+            <div class="skeleton h-6 w-24 rounded-full"></div>
+            <div class="skeleton h-6 w-24 rounded-full"></div>
+          </div>
+        </div>
+        <div class="mb-8">
+          <div class="skeleton h-4 w-full rounded mb-2"></div>
+          <div class="skeleton h-4 w-full rounded mb-2"></div>
+          <div class="skeleton h-4 w-3/4 rounded mb-4"></div>
+          <div class="skeleton h-4 w-full rounded mb-2"></div>
+          <div class="skeleton h-4 w-5/6 rounded"></div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="skeleton h-32 rounded-lg"></div>
+          <div class="skeleton h-32 rounded-lg"></div>
+          <div class="skeleton h-32 rounded-lg"></div>
+        </div>
+      </div>
+
+      <!-- Error state -->
+      <div id="error" class="hidden text-center py-16">
+        <p class="text-gray-400 text-lg" id="error-message"></p>
+      </div>
+
+      <!-- Data sections (hidden until loaded) -->
+      <div id="content" class="hidden">
+
+        <!-- Regime -->
+        <section id="regime-section" class="mb-8"></section>
+
+        <!-- Narrative -->
+        <section id="narrative-section" class="mb-10"></section>
+
+        <!-- Moving together -->
+        <section id="moving-together-section"></section>
+
+      </div>
+
+    </main>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
