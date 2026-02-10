@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI
 
 from backend.db import init_db
+from backend.providers.fred import FredProvider
 from backend.providers.twelve_data import TwelveDataProvider
 
 
@@ -14,7 +15,9 @@ async def lifespan(app: FastAPI):
     """Initialize resources on startup, clean up on shutdown."""
     await init_db()
     app.state.twelve_data = TwelveDataProvider()
+    app.state.fred = FredProvider()
     yield
+    await app.state.fred.close()
     await app.state.twelve_data.close()
 
 
