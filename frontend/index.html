@@ -43,6 +43,23 @@
           <div class="skeleton h-32 rounded-lg"></div>
           <div class="skeleton h-32 rounded-lg"></div>
         </div>
+        <div class="mt-8">
+          <div class="skeleton h-4 w-24 rounded mb-4"></div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div class="skeleton h-28 rounded-lg"></div>
+            <div class="skeleton h-28 rounded-lg"></div>
+            <div class="skeleton h-28 rounded-lg"></div>
+            <div class="skeleton h-28 rounded-lg"></div>
+          </div>
+        </div>
+        <div class="mt-6">
+          <div class="skeleton h-4 w-28 rounded mb-4"></div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div class="skeleton h-28 rounded-lg"></div>
+            <div class="skeleton h-28 rounded-lg"></div>
+            <div class="skeleton h-28 rounded-lg"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Error state -->
@@ -91,7 +108,20 @@
         </section>
 
         <!-- Moving together -->
-        <section id="moving-together-section"></section>
+        <section id="moving-together-section" class="mb-10"></section>
+
+        <!-- Period toggle -->
+        <section id="period-toggle-section" class="mb-6">
+          <div class="flex gap-2">
+            <button class="period-btn active" data-period="1D">Today</button>
+            <button class="period-btn" data-period="1W">1W</button>
+            <button class="period-btn" data-period="1M">1M</button>
+            <button class="period-btn" data-period="YTD">YTD</button>
+          </div>
+        </section>
+
+        <!-- Asset class sections (populated by JS) -->
+        <div id="asset-sections"></div>
 
       </div>
 
@@ -99,6 +129,7 @@
 
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

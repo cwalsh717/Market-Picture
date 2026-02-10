@@ -19,3 +19,69 @@
 .narrative p:last-child {
   margin-bottom: 0;
 }
+
+/* Period toggle buttons */
+.period-btn {
+  padding: 0.375rem 1rem;
+  border-radius: 9999px;
+  border: 1px solid #374151;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.period-btn:hover {
+  border-color: #6b7280;
+  color: #e5e7eb;
+}
+
+.period-btn.active {
+  background: #1f2937;
+  border-color: #6b7280;
+  color: #f3f4f6;
+}
+
+/* Asset cards */
+.asset-card {
+  border: 1px solid #374151;
+  background: rgba(17, 24, 39, 0.5);
+  border-radius: 0.5rem;
+  padding: 0.875rem;
+  transition: border-color 0.15s ease;
+}
+
+.asset-card:hover {
+  border-color: #6b7280;
+}
+
+/* Sparkline container */
+.sparkline-container {
+  width: 80px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+/* Info tooltip */
+.info-btn {
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.75rem;
+  line-height: 1;
+  transition: color 0.15s ease;
+}
+
+.info-btn:hover {
+  color: #9ca3af;
+}
+
+.info-tooltip {
+  border-top: 1px solid #374151;
+  margin-top: 0.625rem;
+  padding-top: 0.625rem;
+}
