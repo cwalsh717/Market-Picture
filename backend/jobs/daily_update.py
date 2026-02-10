@@ -175,6 +175,28 @@ async def generate_premarket_summary() -> None:
 async def generate_close_summary() -> None:
     """Generate the after-close LLM summary (~4:30 PM ET).
 
-    Placeholder -- will be implemented in the intelligence module.
+    Computes regime classification and persists to the summaries table.
+    LLM narrative generation will be added later.
     """
-    logger.info("After-close summary job triggered (not yet implemented)")
+    from backend.intelligence.regime import classify_regime
+
+    logger.info("After-close summary job triggered")
+
+    conn = await get_connection()
+    try:
+        regime = await classify_regime(conn)
+        logger.info("Regime: %s | %s", regime["label"], regime["reason"])
+
+        today = datetime.now(_ET).date().isoformat()
+        await conn.execute(
+            """
+            INSERT INTO summaries (date, period, regime_label, regime_reason)
+            VALUES (?, ?, ?, ?)
+            """,
+            (today, "close", regime["label"], regime["reason"]),
+        )
+        await conn.commit()
+    except Exception:
+        logger.exception("Failed to generate close summary")
+    finally:
+        await conn.close()

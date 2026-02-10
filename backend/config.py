@@ -33,11 +33,14 @@ MARKET_HOURS: dict[str, dict[str, str]] = {
 # ---------------------------------------------------------------------------
 REGIME_THRESHOLDS: dict[str, float] = {
     "vix_risk_off": 25.0,          # VIX above this → risk-off signal
-    "vix_risk_on": 15.0,           # VIX below this → risk-on signal
+    "vix_risk_on": 20.0,           # VIX below this → risk-on signal
     "hy_spread_risk_off": 5.0,     # HY spread above this → risk-off
     "hy_spread_risk_on": 3.5,      # HY spread below this → risk-on
+    "hy_spread_widening_bps": 10,  # HY spread WoW increase > this (bps) → widening
     "dxy_strong": 105.0,           # DXY above this → strong dollar
     "dxy_weak": 100.0,             # DXY below this → weak dollar
+    "dxy_spike_pct": 1.0,          # DXY daily change > this % → spiking
+    "spx_ma_period": 20,           # Number of trading days for S&P 500 MA
     "yield_curve_inverted": 0.0,   # 2s10s below this → inverted
     "gold_safe_haven_pct": 1.5,    # Gold up >1.5% on a risk-off day → flight to safety
     "correlation_threshold": 0.7,  # Minimum r for "moving together" grouping
