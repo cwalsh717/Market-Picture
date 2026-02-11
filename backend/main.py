@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.config import ASSETS, FRED_SERIES, SYMBOL_ASSET_CLASS
 from backend.db import get_connection, init_db
+from backend.jobs.daily_update import generate_close_summary, save_quotes
 from backend.jobs.scheduler import start_scheduler, stop_scheduler
 from backend.providers.fred import FredProvider
 from backend.providers.twelve_data import TwelveDataProvider
@@ -184,6 +185,37 @@ async def search_ticker(ticker: str) -> dict:
         "change_abs": quote["change_abs"],
         "timestamp": quote["timestamp"],
     }
+
+
+@app.post("/api/admin/fetch-now")
+async def fetch_now() -> dict:
+    """Manually trigger a full data fetch + intelligence pipeline run."""
+    results: dict[str, object] = {}
+
+    # 1. Fetch all Twelve Data quotes (ignore market hours)
+    td: TwelveDataProvider = app.state.twelve_data
+    td_quotes = await td.get_all_quotes()
+    td_saved = await save_quotes(td_quotes)
+    results["twelve_data"] = {"fetched": len(td_quotes), "saved": td_saved}
+    logger.info("fetch-now: Twelve Data — %d fetched, %d saved", len(td_quotes), td_saved)
+
+    # 2. Fetch all FRED quotes
+    fred: FredProvider = app.state.fred
+    fred_quotes = await fred.get_all_quotes()
+    fred_saved = await save_quotes(fred_quotes)
+    results["fred"] = {"fetched": len(fred_quotes), "saved": fred_saved}
+    logger.info("fetch-now: FRED — %d fetched, %d saved", len(fred_quotes), fred_saved)
+
+    # 3. Run intelligence pipeline (regime + correlations + LLM summary)
+    try:
+        await generate_close_summary()
+        results["summary"] = "ok"
+        logger.info("fetch-now: close summary generated")
+    except Exception:
+        logger.exception("fetch-now: summary generation failed")
+        results["summary"] = "error"
+
+    return {"status": "ok", "results": results}
 
 
 # ---------------------------------------------------------------------------
