@@ -147,14 +147,18 @@ function renderRegime(regime) {
   const reason = `<p class="text-gray-400 text-sm mt-2">${escapeHtml(regime.reason)}</p>`;
 
   // Signal pills
+  const directionLabels = { risk_on: "Bullish", risk_off: "Bearish", neutral: "Neutral" };
   let pills = "";
   if (regime.signals && regime.signals.length) {
     const items = regime.signals.map((s) => {
       const dc = DIRECTION_COLORS[s.direction] || DIRECTION_COLORS.neutral;
       const label = SIGNAL_LABELS[s.name] || s.name;
-      return `<span class="${dc.bg} ${dc.border} border px-3 py-1 rounded-full text-xs flex items-center gap-1.5 cursor-default" title="${escapeAttr(s.detail)}"><span class="${dc.dot} w-1.5 h-1.5 rounded-full inline-block"></span>${escapeHtml(label)}</span>`;
+      const dirLabel = directionLabels[s.direction] || "Neutral";
+      const titleText = `${dirLabel} — ${s.detail}`;
+      return `<span class="${dc.bg} ${dc.border} border px-3 py-1 rounded-full text-xs flex items-center gap-1.5 cursor-default" title="${escapeAttr(titleText)}"><span class="${dc.dot} w-1.5 h-1.5 rounded-full inline-block"></span>${escapeHtml(label)}</span>`;
     });
-    pills = `<div class="flex flex-wrap gap-2 mt-3">${items.join("")}</div>`;
+    const legend = `<div class="flex gap-3 mt-2 text-xs text-gray-500"><span class="flex items-center gap-1"><span class="bg-emerald-400 w-1.5 h-1.5 rounded-full inline-block"></span> Bullish</span><span class="flex items-center gap-1"><span class="bg-red-400 w-1.5 h-1.5 rounded-full inline-block"></span> Bearish</span><span class="flex items-center gap-1"><span class="bg-gray-400 w-1.5 h-1.5 rounded-full inline-block"></span> Neutral</span></div>`;
+    pills = `<div class="flex flex-wrap gap-2 mt-3">${items.join("")}</div>${legend}`;
   }
 
   el.innerHTML = badge + reason + pills;
@@ -164,7 +168,7 @@ function renderNarrative(summaryText, date, period) {
   const el = document.getElementById("narrative-section");
   const periodLabel = period === "premarket" ? "Pre-market" : "After close";
 
-  const heading = `<h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">${periodLabel} — ${escapeHtml(date)}</h2>`;
+  const heading = `<h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">${periodLabel} — ${escapeHtml(date)}</h2>`;
 
   const paragraphs = summaryText
     .split("\n\n")
@@ -343,7 +347,7 @@ function renderAssetSections(assets) {
 
     html += `
       <section class="mb-8">
-        <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">${escapeHtml(section.label)}</h2>
+        <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">${escapeHtml(section.label)}</h2>
         <div class="grid ${colClass} gap-3">
           ${items.map(renderAssetCard).join("")}
         </div>
@@ -756,6 +760,18 @@ async function init() {
   }
 
   showContent();
+
+  // Show "Last updated" footer
+  const footerEl = document.getElementById("last-updated");
+  if (footerEl) {
+    const updatedAt = (snapshotData && snapshotData.generated_at) || new Date().toISOString();
+    const d = new Date(updatedAt);
+    const formatted = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      + " at "
+      + d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    footerEl.textContent = `Last updated: ${formatted}`;
+    footerEl.classList.remove("hidden");
+  }
 
   // Load sparklines asynchronously (progressive)
   if (assets) {

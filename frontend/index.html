@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="og:title" content="Market Picture">
+  <meta property="og:description" content="Cross-asset market dashboard — regime, correlations, and narrative in plain English.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="/og-image.png">
   <title>Market Picture</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="styles.css">
@@ -12,7 +16,7 @@
   <div class="max-w-4xl mx-auto px-4 py-6">
 
     <!-- Header -->
-    <header class="flex items-center justify-between mb-8">
+    <header class="flex items-center justify-between flex-wrap gap-2 mb-8">
       <h1 class="text-2xl font-bold tracking-tight">Market Picture</h1>
       <div id="header-meta" class="text-sm text-gray-400"></div>
     </header>
@@ -71,7 +75,7 @@
       <div id="content" class="hidden">
 
         <!-- Regime -->
-        <section id="regime-section" class="mb-8"></section>
+        <section id="regime-section" class="mb-10"></section>
 
         <!-- Narrative -->
         <section id="narrative-section" class="mb-10"></section>
@@ -94,7 +98,7 @@
               </svg>
             </div>
           </div>
-          <div id="search-result" class="hidden mt-3 border border-gray-700 bg-gray-900/50 rounded-lg p-4">
+          <div id="search-result" class="hidden mt-3 asset-card">
             <div class="flex items-baseline justify-between flex-wrap gap-2">
               <span id="search-symbol" class="text-lg font-bold"></span>
               <span id="search-price" class="text-lg text-gray-200"></span>
@@ -115,7 +119,7 @@
 
         <!-- Period toggle -->
         <section id="period-toggle-section" class="mb-6">
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-2">
             <button class="period-btn active" data-period="1D">Today</button>
             <button class="period-btn" data-period="1W">1W</button>
             <button class="period-btn" data-period="1M">1M</button>
@@ -125,6 +129,8 @@
 
         <!-- Asset class sections (populated by JS) -->
         <div id="asset-sections"></div>
+
+        <footer id="last-updated" class="hidden text-center text-xs text-gray-600 mt-12 mb-4"></footer>
 
       </div>
 
