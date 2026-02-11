@@ -29,11 +29,10 @@ const DIRECTION_COLORS = {
   neutral:  { bg: "bg-gray-800/60",    border: "border-gray-600",    dot: "bg-gray-400"    },
 };
 
-// Moving-together group label → card accent
+// Today's Movers group label → card accent
 const GROUP_STYLES = {
-  "Rallying together": { border: "border-emerald-700", accent: "text-emerald-400", icon: "\u25B2" },
-  "Selling together":  { border: "border-red-700",     accent: "text-red-400",     icon: "\u25BC" },
-  "Diverging":         { border: "border-amber-700",   accent: "text-amber-400",   icon: "\u21C4" },
+  "Up":   { border: "border-emerald-700", accent: "text-emerald-400", icon: "\u25B2" },
+  "Down": { border: "border-red-700",     accent: "text-red-400",     icon: "\u25BC" },
 };
 
 // ---------------------------------------------------------------------------
@@ -179,14 +178,15 @@ function renderMovingTogether(groups) {
   const el = document.getElementById("moving-together-section");
 
   if (!groups || !groups.length) {
-    el.innerHTML = `<p class="text-gray-500 text-sm">No co-movement groups detected.</p>`;
+    el.innerHTML = `<p class="text-gray-500 text-sm">No significant movers detected.</p>`;
     return;
   }
 
-  const heading = `<h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">What's Moving Together</h2>`;
+  const heading = `<h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Today's Movers</h2>`;
+  const fallbackStyle = { border: "border-gray-700", accent: "text-gray-400", icon: "\u2022" };
 
   const cards = groups.map((g) => {
-    const style = GROUP_STYLES[g.label] || GROUP_STYLES["Diverging"];
+    const style = GROUP_STYLES[g.label] || fallbackStyle;
     const chips = g.assets
       .map((a) => `<span class="bg-gray-800 text-gray-200 text-xs px-2 py-0.5 rounded">${escapeHtml(a)}</span>`)
       .join("");
@@ -201,6 +201,70 @@ function renderMovingTogether(groups) {
         <p class="text-gray-400 text-xs">${escapeHtml(g.detail)}</p>
       </div>`;
   });
+
+  el.innerHTML = heading + `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">${cards.join("")}</div>`;
+}
+
+function renderCorrelationAlerts(correlations) {
+  const el = document.getElementById("correlation-alerts-section");
+
+  if (!correlations || !correlations["1D"]) {
+    el.innerHTML = "";
+    return;
+  }
+
+  const data1D = correlations["1D"];
+  const anomalies = data1D.anomalies || [];
+  const diverging = data1D.diverging || [];
+
+  if (!anomalies.length && !diverging.length) {
+    el.innerHTML = "";
+    return;
+  }
+
+  const heading = `<h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4">Correlation Alerts</h2>`;
+  const typeLabels = {
+    unexpected_convergence: "Unusual convergence",
+    broken_correlation: "Broken correlation",
+    scarcity_divergence: "Scarcity divergence",
+  };
+
+  const cards = [];
+
+  for (const a of anomalies) {
+    const typeLabel = typeLabels[a.anomaly_type] || a.anomaly_type;
+    cards.push(`
+      <div class="border border-amber-700 bg-gray-900/50 rounded-lg p-4">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-amber-400 text-base">\u26A0</span>
+          <span class="text-amber-400 font-semibold text-sm">${escapeHtml(typeLabel)}</span>
+        </div>
+        <p class="text-gray-300 text-sm">${escapeHtml(a.detail)}</p>
+      </div>`);
+  }
+
+  for (const d of diverging) {
+    const pctA = Number(d.change_pct_a);
+    const pctB = Number(d.change_pct_b);
+    const colorA = pctA >= 0 ? "text-emerald-400" : "text-red-400";
+    const colorB = pctB >= 0 ? "text-emerald-400" : "text-red-400";
+    cards.push(`
+      <div class="border border-amber-700 bg-gray-900/50 rounded-lg p-4">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-amber-400 text-base">\u21C4</span>
+          <span class="text-amber-400 font-semibold text-sm">Diverging pair</span>
+        </div>
+        <div class="flex flex-wrap gap-1.5 mb-2">
+          <span class="bg-gray-800 text-gray-200 text-xs px-2 py-0.5 rounded">${escapeHtml(d.label_a)}</span>
+          <span class="bg-gray-800 text-gray-200 text-xs px-2 py-0.5 rounded">${escapeHtml(d.label_b)}</span>
+        </div>
+        <p class="text-gray-400 text-xs">
+          <span class="${colorA}">${pctA >= 0 ? "+" : ""}${pctA.toFixed(1)}%</span> vs
+          <span class="${colorB}">${pctB >= 0 ? "+" : ""}${pctB.toFixed(1)}%</span>
+          &mdash; normally correlated (r\u2248${Number(d.baseline_r).toFixed(2)})
+        </p>
+      </div>`);
+  }
 
   el.innerHTML = heading + `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">${cards.join("")}</div>`;
 }
@@ -523,6 +587,7 @@ async function init() {
     renderRegime(summaryData.regime);
     renderNarrative(summaryData.summary_text, summaryData.date, summaryData.period);
     renderMovingTogether(summaryData.moving_together);
+    renderCorrelationAlerts(summaryData.correlations);
   }
 
   // Render asset sections from snapshot

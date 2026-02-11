@@ -155,24 +155,6 @@ def _format_diverging(diverging: list[DivergingPair]) -> str:
     return "\n".join(lines)
 
 
-def _build_diverging_together(
-    diverging: list[DivergingPair],
-) -> list[MovingTogetherGroup]:
-    """Transform DivergingPair list into user-facing MovingTogetherGroup entries."""
-    result: list[MovingTogetherGroup] = []
-    for d in diverging:
-        detail = (
-            f"{d['label_a']} {d['change_pct_a']:+.1f}% vs "
-            f"{d['label_b']} {d['change_pct_b']:+.1f}%"
-        )
-        result.append(MovingTogetherGroup(
-            label="Diverging",
-            assets=[d["label_a"], d["label_b"]],
-            detail=detail,
-        ))
-    return result
-
-
 # ---------------------------------------------------------------------------
 # Moving-together builder (structured output for frontend)
 # ---------------------------------------------------------------------------
@@ -184,7 +166,7 @@ def _build_moving_together(
     """Transform internal CoMovingGroup into user-facing MovingTogetherGroup."""
     result: list[MovingTogetherGroup] = []
     for g in groups:
-        label = "Rallying together" if g["direction"] == "up" else "Selling together"
+        label = "Up" if g["direction"] == "up" else "Down"
         assets = [_label(s) for s in g["symbols"]]
         sign = "Up" if g["direction"] == "up" else "Down"
         detail = f"{sign} avg {abs(g['avg_change_pct']):.1f}%"
@@ -337,10 +319,7 @@ async def generate_premarket(
         logger.exception("Anthropic API call failed for premarket summary")
         text = _build_fallback_summary("premarket", regime, corr_1d)
 
-    moving = (
-        _build_moving_together(corr_1d["groups"])
-        + _build_diverging_together(corr_1d.get("diverging", []))
-    )
+    moving = _build_moving_together(corr_1d["groups"])
     return SummaryResult(
         period="premarket",
         summary_text=text,
@@ -371,10 +350,7 @@ async def generate_close(
         logger.exception("Anthropic API call failed for close summary")
         text = _build_fallback_summary("close", regime, corr_1d, corr_1m)
 
-    moving = (
-        _build_moving_together(corr_1d["groups"])
-        + _build_diverging_together(corr_1d.get("diverging", []))
-    )
+    moving = _build_moving_together(corr_1d["groups"])
     return SummaryResult(
         period="close",
         summary_text=text,

@@ -28,7 +28,6 @@ import pytest
 from backend.intelligence.summary import (
     MovingTogetherGroup,
     SummaryResult,
-    _build_diverging_together,
     _build_fallback_summary,
     _build_moving_together,
     _format_anomalies,
@@ -427,7 +426,7 @@ class TestBuildMovingTogether:
         groups = [_make_group(direction="up", avg_change_pct=2.1, symbols=["SPY", "QQQ"])]
         result = _build_moving_together(groups)
         assert len(result) == 1
-        assert result[0]["label"] == "Rallying together"
+        assert result[0]["label"] == "Up"
         assert result[0]["detail"] == "Up avg 2.1%"
         assert "S&P 500 (SPY)" in result[0]["assets"]
         assert "Nasdaq 100 (QQQ)" in result[0]["assets"]
@@ -436,7 +435,7 @@ class TestBuildMovingTogether:
         groups = [_make_group(direction="down", avg_change_pct=-1.8, symbols=["USO", "UNG"])]
         result = _build_moving_together(groups)
         assert len(result) == 1
-        assert result[0]["label"] == "Selling together"
+        assert result[0]["label"] == "Down"
         assert result[0]["detail"] == "Down avg 1.8%"
         assert "Crude Oil (USO)" in result[0]["assets"]
         assert "Natural Gas (UNG)" in result[0]["assets"]
@@ -459,8 +458,8 @@ class TestBuildMovingTogether:
         result = _build_moving_together(groups)
         assert len(result) == 2
         labels = [r["label"] for r in result]
-        assert "Rallying together" in labels
-        assert "Selling together" in labels
+        assert "Up" in labels
+        assert "Down" in labels
 
     def test_result_is_moving_together_group_shape(self):
         groups = [_make_group(direction="up", avg_change_pct=1.0, symbols=["SPY"])]
@@ -504,34 +503,6 @@ class TestFormatDiverging:
         result = _format_diverging(pairs)
         lines = result.split("\n")
         assert len(lines) == 2
-
-
-# ---------------------------------------------------------------------------
-# _build_diverging_together
-# ---------------------------------------------------------------------------
-
-
-class TestBuildDivergingTogether:
-    def test_single_pair(self):
-        pairs = [_make_diverging_pair()]
-        result = _build_diverging_together(pairs)
-        assert len(result) == 1
-        assert result[0]["label"] == "Diverging"
-        assert "Nasdaq 100 (QQQ)" in result[0]["assets"]
-        assert "S&P 500 (SPY)" in result[0]["assets"]
-        assert "Nasdaq 100 (QQQ)" in result[0]["detail"]
-        assert "S&P 500 (SPY)" in result[0]["detail"]
-
-    def test_empty_list(self):
-        result = _build_diverging_together([])
-        assert result == []
-
-    def test_detail_format(self):
-        pairs = [_make_diverging_pair()]
-        result = _build_diverging_together(pairs)
-        detail = result[0]["detail"]
-        assert "Nasdaq 100 (QQQ) -2.0%" in detail
-        assert "S&P 500 (SPY) +1.5%" in detail
 
 
 # ---------------------------------------------------------------------------
@@ -828,7 +799,7 @@ class TestGeneratePremarket:
         result = await generate_premarket(regime, corr_1d, client=mock_client)
 
         assert len(result["moving_together"]) == 1
-        assert result["moving_together"][0]["label"] == "Rallying together"
+        assert result["moving_together"][0]["label"] == "Up"
 
     @pytest.mark.asyncio
     async def test_moving_together_empty_when_no_groups(self):
@@ -858,24 +829,6 @@ class TestGeneratePremarket:
         required_keys = {"period", "summary_text", "moving_together",
                          "regime_label", "regime_reason", "timestamp"}
         assert required_keys == set(result.keys())
-
-    @pytest.mark.asyncio
-    async def test_moving_together_includes_diverging(self):
-        mock_client = AsyncMock()
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Summary.")]
-        mock_client.messages.create.return_value = mock_response
-
-        group = _make_group(direction="up", avg_change_pct=2.0, symbols=["SPY", "QQQ"])
-        pair = _make_diverging_pair()
-        regime = _make_regime()
-        corr_1d = _make_corr(groups=[group], diverging=[pair])
-
-        result = await generate_premarket(regime, corr_1d, client=mock_client)
-
-        labels = [m["label"] for m in result["moving_together"]]
-        assert "Rallying together" in labels
-        assert "Diverging" in labels
 
 
 # ---------------------------------------------------------------------------
@@ -949,7 +902,7 @@ class TestGenerateClose:
         result = await generate_close(regime, corr_1d, corr_1m, client=mock_client)
 
         assert len(result["moving_together"]) == 1
-        assert result["moving_together"][0]["label"] == "Selling together"
+        assert result["moving_together"][0]["label"] == "Down"
 
     @pytest.mark.asyncio
     async def test_fallback_includes_1m_data(self):
@@ -965,25 +918,6 @@ class TestGenerateClose:
 
         assert "Monthly co-movement:" in result["summary_text"]
         assert "S&P 500" in result["summary_text"]
-
-    @pytest.mark.asyncio
-    async def test_moving_together_includes_diverging(self):
-        mock_client = AsyncMock()
-        mock_response = MagicMock()
-        mock_response.content = [MagicMock(text="Summary.")]
-        mock_client.messages.create.return_value = mock_response
-
-        group = _make_group(direction="down", avg_change_pct=-1.5, symbols=["USO", "CPER"])
-        pair = _make_diverging_pair()
-        regime = _make_regime()
-        corr_1d = _make_corr(groups=[group], diverging=[pair])
-        corr_1m = _make_corr(period="1M")
-
-        result = await generate_close(regime, corr_1d, corr_1m, client=mock_client)
-
-        labels = [m["label"] for m in result["moving_together"]]
-        assert "Selling together" in labels
-        assert "Diverging" in labels
 
 
 # ---------------------------------------------------------------------------
