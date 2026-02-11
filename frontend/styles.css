@@ -51,6 +51,7 @@
   border-radius: 0.5rem;
   padding: 0.875rem;
   transition: border-color 0.15s ease;
+  cursor: pointer;
 }
 
 .asset-card:hover {
@@ -84,4 +85,12 @@
   border-top: 1px solid #374151;
   margin-top: 0.625rem;
   padding-top: 0.625rem;
+}
+
+/* Expanded chart */
+.expanded-chart {
+  height: 200px;
+  margin-top: 0.75rem;
+  border-top: 1px solid #374151;
+  padding-top: 0.75rem;
 }
