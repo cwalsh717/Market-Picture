@@ -131,11 +131,11 @@ async def _compute_sma(
 async def _eval_spx_trend(conn: aiosqlite.Connection) -> Signal:
     """S&P 500 price vs its N-day simple moving average."""
     period = int(REGIME_THRESHOLDS["spx_ma_period"])
-    latest = await _get_latest_snapshot(conn, "SPX")
+    latest = await _get_latest_snapshot(conn, "SPY")
     if latest is None:
         return Signal(name="spx_trend", direction="neutral", detail="S&P 500 data unavailable")
 
-    sma = await _compute_sma(conn, "SPX", period)
+    sma = await _compute_sma(conn, "SPY", period)
     if sma is None:
         return Signal(name="spx_trend", direction="neutral", detail=f"insufficient history for {period}-day MA")
 
@@ -236,8 +236,8 @@ async def _eval_gold_vs_equities(conn: aiosqlite.Connection) -> Signal:
     Requires gold to be up more than ``gold_safe_haven_pct`` AND
     outperforming S&P to filter out noise on flat days.
     """
-    gold = await _get_latest_snapshot(conn, "XAU")
-    spx = await _get_latest_snapshot(conn, "SPX")
+    gold = await _get_latest_snapshot(conn, "GLD")
+    spx = await _get_latest_snapshot(conn, "SPY")
     if gold is None or spx is None:
         return Signal(name="gold_vs_equities", direction="neutral", detail="gold/equity data unavailable")
 

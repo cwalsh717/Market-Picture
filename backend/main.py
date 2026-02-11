@@ -1,12 +1,17 @@
 """FastAPI application entry point."""
 
+from __future__ import annotations
+
 import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from backend.config import ASSETS, FRED_SERIES, SYMBOL_ASSET_CLASS
 from backend.db import get_connection, init_db
@@ -179,3 +184,10 @@ async def search_ticker(ticker: str) -> dict:
         "change_abs": quote["change_abs"],
         "timestamp": quote["timestamp"],
     }
+
+
+# ---------------------------------------------------------------------------
+# Static file serving (frontend)
+# ---------------------------------------------------------------------------
+_FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+app.mount("/", StaticFiles(directory=_FRONTEND_DIR, html=True), name="frontend")

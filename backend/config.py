@@ -49,8 +49,8 @@ REGIME_THRESHOLDS: dict[str, float] = {
 # ---------------------------------------------------------------------------
 ASSETS: dict[str, dict[str, str]] = {
     "equities": {
-        "SPX": "S&P 500",
-        "NDX": "Nasdaq 100",
+        "SPY": "S&P 500 (SPY)",
+        "QQQ": "Nasdaq 100 (QQQ)",
         "IWM": "Russell 2000",
         "VIXY": "VIX (Short-Term Futures)",
     },
@@ -64,9 +64,9 @@ ASSETS: dict[str, dict[str, str]] = {
         "UUP": "US Dollar (UUP)",
     },
     "commodities": {
-        "WTI": "Crude Oil (WTI)",
-        "NG": "Natural Gas",
-        "XAU": "Gold",
+        "USO": "Crude Oil (USO)",
+        "UNG": "Natural Gas (UNG)",
+        "GLD": "Gold (GLD)",
         "CPER": "Copper (CPER)",
     },
     "critical_minerals": {
@@ -97,8 +97,8 @@ FRED_SERIES: dict[str, str] = {
 # Other values must be keys in MARKET_HOURS.
 SYMBOL_MARKET_MAP: dict[str, str] = {
     # Equities (US hours)
-    "SPX": "US",
-    "NDX": "US",
+    "SPY": "US",
+    "QQQ": "US",
     "IWM": "US",
     "VIXY": "US",
     # International (US-listed ETF proxies — trade during US hours)
@@ -109,9 +109,9 @@ SYMBOL_MARKET_MAP: dict[str, str] = {
     # Currencies (US hours)
     "UUP": "US",
     # Commodities (US hours)
-    "WTI": "US",
-    "NG": "US",
-    "XAU": "US",
+    "USO": "US",
+    "UNG": "US",
+    "GLD": "US",
     "CPER": "US",
     # Critical minerals (US-listed ETFs)
     "URA": "US",
@@ -149,34 +149,34 @@ CORRELATION_CONFIG: dict[str, float] = {
 # Keys are (symbol_a, symbol_b) sorted alphabetically.
 BASELINE_CORRELATIONS: dict[tuple[str, str], float] = {
     # Traditionally high positive (equity indices)
-    ("NDX", "SPX"): 0.90,
-    ("IWM", "SPX"): 0.85,
-    ("IWM", "NDX"): 0.80,
+    ("QQQ", "SPY"): 0.90,
+    ("IWM", "SPY"): 0.85,
+    ("IWM", "QQQ"): 0.80,
     ("FEZ", "UKX"): 0.85,
     # Traditionally negative
-    ("SPX", "VIXY"): -0.80,
+    ("SPY", "VIXY"): -0.80,
     # Normally uncorrelated (crypto vs traditional)
-    ("BTC/USD", "NDX"): 0.15,
+    ("BTC/USD", "QQQ"): 0.15,
     ("BTC/USD", "IWM"): 0.10,
-    ("BTC/USD", "SPX"): 0.10,
-    ("ETH/USD", "SPX"): 0.10,
+    ("BTC/USD", "SPY"): 0.10,
+    ("ETH/USD", "SPY"): 0.10,
     # Scarcity-risk (critical minerals vs broad risk)
-    ("LIT", "NDX"): 0.45,
-    ("LIT", "SPX"): 0.50,
-    ("NDX", "REMX"): 0.40,
-    ("NDX", "URA"): 0.35,
-    ("REMX", "SPX"): 0.45,
-    ("SPX", "URA"): 0.40,
+    ("LIT", "QQQ"): 0.45,
+    ("LIT", "SPY"): 0.50,
+    ("QQQ", "REMX"): 0.40,
+    ("QQQ", "URA"): 0.35,
+    ("REMX", "SPY"): 0.45,
+    ("SPY", "URA"): 0.40,
     # Scarcity internal
     ("LIT", "REMX"): 0.65,
     ("LIT", "URA"): 0.55,
     ("REMX", "URA"): 0.60,
     # Cross-asset
-    ("DGS10", "SPX"): 0.15,
-    ("SPX", "UUP"): -0.20,
-    ("SPX", "WTI"): 0.35,
-    ("SPX", "XAU"): -0.10,
-    ("CPER", "SPX"): 0.50,
+    ("DGS10", "SPY"): 0.15,
+    ("SPY", "UUP"): -0.20,
+    ("SPY", "USO"): 0.35,
+    ("GLD", "SPY"): -0.10,
+    ("CPER", "SPY"): 0.50,
 }
 
 # ---------------------------------------------------------------------------

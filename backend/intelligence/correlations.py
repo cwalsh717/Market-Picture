@@ -87,7 +87,7 @@ class CorrelationResult(TypedDict):
 # ---------------------------------------------------------------------------
 
 _SCARCITY_SYMBOLS: list[str] = ["URA", "LIT", "REMX"]
-_RISK_SYMBOLS: list[str] = ["SPX", "NDX"]
+_RISK_SYMBOLS: list[str] = ["SPY", "QQQ"]
 
 
 def _label(symbol: str) -> str:

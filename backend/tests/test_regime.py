@@ -94,7 +94,7 @@ async def _seed_spx_history(db_path: str, base_price: float, days: int) -> None:
     now = datetime.now(timezone.utc)
     for i in range(days):
         ts = (now - timedelta(days=i + 1)).isoformat()
-        await _insert_snapshot(db_path, "SPX", base_price, timestamp=ts)
+        await _insert_snapshot(db_path, "SPY", base_price, timestamp=ts)
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +107,7 @@ class TestSpxTrend:
     async def test_above_ma(self, tmp_path):
         db_path = str(tmp_path / "test.db")
         await _seed_spx_history(db_path, 5000.0, 20)
-        await _insert_snapshot(db_path, "SPX", 5200.0)
+        await _insert_snapshot(db_path, "SPY", 5200.0)
 
         conn = await _conn(db_path)
         try:
@@ -122,7 +122,7 @@ class TestSpxTrend:
     async def test_below_ma(self, tmp_path):
         db_path = str(tmp_path / "test.db")
         await _seed_spx_history(db_path, 5000.0, 20)
-        await _insert_snapshot(db_path, "SPX", 4800.0)
+        await _insert_snapshot(db_path, "SPY", 4800.0)
 
         conn = await _conn(db_path)
         try:
@@ -137,7 +137,7 @@ class TestSpxTrend:
     async def test_insufficient_history(self, tmp_path):
         db_path = str(tmp_path / "test.db")
         await _seed_spx_history(db_path, 5000.0, 10)
-        await _insert_snapshot(db_path, "SPX", 5100.0)
+        await _insert_snapshot(db_path, "SPY", 5100.0)
 
         conn = await _conn(db_path)
         try:
@@ -366,8 +366,8 @@ class TestGoldVsEquities:
     @pytest.mark.asyncio
     async def test_gold_outperforming_risk_off(self, tmp_path):
         db_path = str(tmp_path / "test.db")
-        await _insert_snapshot(db_path, "XAU", 2100.0, change_pct=2.0)
-        await _insert_snapshot(db_path, "SPX", 5000.0, change_pct=0.5)
+        await _insert_snapshot(db_path, "GLD", 2100.0, change_pct=2.0)
+        await _insert_snapshot(db_path, "SPY", 5000.0, change_pct=0.5)
 
         conn = await _conn(db_path)
         try:
@@ -382,8 +382,8 @@ class TestGoldVsEquities:
     async def test_gold_up_but_below_threshold(self, tmp_path):
         """Gold beating S&P but not up enough to trigger safe-haven."""
         db_path = str(tmp_path / "test.db")
-        await _insert_snapshot(db_path, "XAU", 2100.0, change_pct=0.5)
-        await _insert_snapshot(db_path, "SPX", 5000.0, change_pct=0.1)
+        await _insert_snapshot(db_path, "GLD", 2100.0, change_pct=0.5)
+        await _insert_snapshot(db_path, "SPY", 5000.0, change_pct=0.1)
 
         conn = await _conn(db_path)
         try:
@@ -396,8 +396,8 @@ class TestGoldVsEquities:
     @pytest.mark.asyncio
     async def test_spx_outperforming_neutral(self, tmp_path):
         db_path = str(tmp_path / "test.db")
-        await _insert_snapshot(db_path, "XAU", 2100.0, change_pct=0.5)
-        await _insert_snapshot(db_path, "SPX", 5000.0, change_pct=1.5)
+        await _insert_snapshot(db_path, "GLD", 2100.0, change_pct=0.5)
+        await _insert_snapshot(db_path, "SPY", 5000.0, change_pct=1.5)
 
         conn = await _conn(db_path)
         try:
@@ -496,11 +496,11 @@ class TestClassifyRegime:
         """SPX above MA, VIXY falling, HY tight → RISK-ON."""
         db_path = str(tmp_path / "test.db")
         await _seed_spx_history(db_path, 5000.0, 20)
-        await _insert_snapshot(db_path, "SPX", 5200.0, change_pct=0.5)
+        await _insert_snapshot(db_path, "SPY", 5200.0, change_pct=0.5)
         await _insert_snapshot(db_path, "VIXY", 22.0, change_pct=-7.0)
         await _insert_snapshot(db_path, "BAMLH0A0HYM2", 3.2)
         await _insert_snapshot(db_path, "UUP", 26.8, change_pct=0.2)
-        await _insert_snapshot(db_path, "XAU", 2050.0, change_pct=0.3)
+        await _insert_snapshot(db_path, "GLD", 2050.0, change_pct=0.3)
 
         conn = await _conn(db_path)
         try:
@@ -522,11 +522,11 @@ class TestClassifyRegime:
         week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
         await _insert_snapshot(db_path, "BAMLH0A0HYM2", 3.50, timestamp=week_ago)
 
-        await _insert_snapshot(db_path, "SPX", 4800.0, change_pct=-2.0)
+        await _insert_snapshot(db_path, "SPY", 4800.0, change_pct=-2.0)
         await _insert_snapshot(db_path, "VIXY", 32.0, change_pct=8.0)
         await _insert_snapshot(db_path, "BAMLH0A0HYM2", 3.65)
         await _insert_snapshot(db_path, "UUP", 28.0, change_pct=1.5)
-        await _insert_snapshot(db_path, "XAU", 2100.0, change_pct=2.0)
+        await _insert_snapshot(db_path, "GLD", 2100.0, change_pct=2.0)
 
         conn = await _conn(db_path)
         try:
@@ -543,11 +543,11 @@ class TestClassifyRegime:
         db_path = str(tmp_path / "test.db")
         await _seed_spx_history(db_path, 5000.0, 20)
 
-        await _insert_snapshot(db_path, "SPX", 5200.0, change_pct=0.5)
+        await _insert_snapshot(db_path, "SPY", 5200.0, change_pct=0.5)
         await _insert_snapshot(db_path, "VIXY", 30.0, change_pct=7.0)
         await _insert_snapshot(db_path, "BAMLH0A0HYM2", 4.0)
         await _insert_snapshot(db_path, "UUP", 26.8, change_pct=0.2)
-        await _insert_snapshot(db_path, "XAU", 2050.0, change_pct=0.3)
+        await _insert_snapshot(db_path, "GLD", 2050.0, change_pct=0.3)
 
         conn = await _conn(db_path)
         try:

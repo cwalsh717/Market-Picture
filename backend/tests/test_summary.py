@@ -98,9 +98,9 @@ def _make_group(
 ) -> dict:
     """Build a CoMovingGroup dict for tests."""
     if symbols is None:
-        symbols = ["SPX", "NDX"]
+        symbols = ["SPY", "QQQ"]
     if labels is None:
-        labels = ["S&P 500", "Nasdaq 100"]
+        labels = ["S&P 500 (SPY)", "Nasdaq 100 (QQQ)"]
     return {
         "direction": direction,
         "avg_change_pct": avg_change_pct,
@@ -118,7 +118,7 @@ def _make_anomaly(
 ) -> dict:
     """Build a CorrelationAnomaly dict for tests."""
     if symbols is None:
-        symbols = ["BTC/USD", "SPX"]
+        symbols = ["BTC/USD", "SPY"]
     return {
         "anomaly_type": anomaly_type,
         "symbols": symbols,
@@ -129,10 +129,10 @@ def _make_anomaly(
 
 
 def _make_diverging_pair(
-    symbol_a: str = "NDX",
-    symbol_b: str = "SPX",
-    label_a: str = "Nasdaq 100",
-    label_b: str = "S&P 500",
+    symbol_a: str = "QQQ",
+    symbol_b: str = "SPY",
+    label_a: str = "Nasdaq 100 (QQQ)",
+    label_b: str = "S&P 500 (SPY)",
     change_pct_a: float = -2.0,
     change_pct_b: float = 1.5,
     baseline_r: float = 0.90,
@@ -156,13 +156,13 @@ def _make_diverging_pair(
 
 class TestLabel:
     def test_known_equity_symbol(self):
-        assert _label("SPX") == "S&P 500"
+        assert _label("SPY") == "S&P 500 (SPY)"
 
     def test_known_crypto_symbol(self):
         assert _label("BTC/USD") == "Bitcoin"
 
     def test_known_commodity_symbol(self):
-        assert _label("XAU") == "Gold"
+        assert _label("GLD") == "Gold (GLD)"
 
     def test_known_critical_mineral(self):
         assert _label("URA") == "Uranium ETF"
@@ -190,7 +190,7 @@ class TestLabel:
 
 class TestAssetClass:
     def test_equities(self):
-        assert _asset_class("SPX") == "equities"
+        assert _asset_class("SPY") == "equities"
         assert _asset_class("VIXY") == "equities"
 
     def test_international(self):
@@ -201,8 +201,8 @@ class TestAssetClass:
         assert _asset_class("UUP") == "currencies"
 
     def test_commodities(self):
-        assert _asset_class("WTI") == "commodities"
-        assert _asset_class("XAU") == "commodities"
+        assert _asset_class("USO") == "commodities"
+        assert _asset_class("GLD") == "commodities"
 
     def test_critical_minerals(self):
         assert _asset_class("URA") == "critical_minerals"
@@ -228,7 +228,7 @@ class TestAssetClass:
 
 class TestFormatComovementGroups:
     def test_up_group(self):
-        groups = [_make_group(direction="up", avg_change_pct=2.5, symbols=["SPX", "NDX"])]
+        groups = [_make_group(direction="up", avg_change_pct=2.5, symbols=["SPY", "QQQ"])]
         result = _format_comovement_groups(groups)
         assert "Rallying together" in result
         assert "+2.5% avg" in result
@@ -236,11 +236,11 @@ class TestFormatComovementGroups:
         assert "Nasdaq 100" in result
 
     def test_down_group(self):
-        groups = [_make_group(direction="down", avg_change_pct=-1.8, symbols=["WTI", "CPER"])]
+        groups = [_make_group(direction="down", avg_change_pct=-1.8, symbols=["USO", "CPER"])]
         result = _format_comovement_groups(groups)
         assert "Selling together" in result
         assert "-1.8% avg" in result
-        assert "Crude Oil (WTI)" in result
+        assert "Crude Oil (USO)" in result
         assert "Copper (CPER)" in result
 
     def test_empty_groups(self):
@@ -249,8 +249,8 @@ class TestFormatComovementGroups:
 
     def test_multiple_groups(self):
         groups = [
-            _make_group(direction="up", avg_change_pct=2.0, symbols=["SPX", "NDX"]),
-            _make_group(direction="down", avg_change_pct=-1.5, symbols=["WTI", "NG"]),
+            _make_group(direction="up", avg_change_pct=2.0, symbols=["SPY", "QQQ"]),
+            _make_group(direction="down", avg_change_pct=-1.5, symbols=["USO", "UNG"]),
         ]
         result = _format_comovement_groups(groups)
         lines = result.split("\n")
@@ -335,7 +335,7 @@ class TestFormatScarcitySummary:
     def test_scarcity_divergence_anomaly(self):
         anomaly = _make_anomaly(
             anomaly_type="scarcity_divergence",
-            symbols=["URA", "SPX"],
+            symbols=["URA", "SPY"],
             detail="Uranium ETF is diverging from S&P 500 (r=-0.20, normally ~0.40)",
         )
         corr_1d = _make_corr(anomalies=[anomaly])
@@ -346,7 +346,7 @@ class TestFormatScarcitySummary:
         group = _make_group(
             direction="up",
             avg_change_pct=3.0,
-            symbols=["SPX", "URA", "LIT"],
+            symbols=["SPY", "URA", "LIT"],
         )
         corr_1d = _make_corr(groups=[group])
         result = _format_scarcity_summary(corr_1d)
@@ -359,7 +359,7 @@ class TestFormatScarcitySummary:
         group = _make_group(
             direction="down",
             avg_change_pct=-2.0,
-            symbols=["REMX", "NDX"],
+            symbols=["REMX", "QQQ"],
         )
         corr_1d = _make_corr(groups=[group])
         result = _format_scarcity_summary(corr_1d)
@@ -375,7 +375,7 @@ class TestFormatScarcitySummary:
         """Scarcity divergence in the 1M correlation result is also picked up."""
         anomaly = _make_anomaly(
             anomaly_type="scarcity_divergence",
-            symbols=["LIT", "NDX"],
+            symbols=["LIT", "QQQ"],
             detail="Lithium ETF is diverging from Nasdaq 100",
         )
         corr_1d = _make_corr(anomalies=[])
@@ -386,7 +386,7 @@ class TestFormatScarcitySummary:
     def test_non_scarcity_anomaly_ignored(self):
         anomaly = _make_anomaly(
             anomaly_type="unexpected_convergence",
-            symbols=["BTC/USD", "SPX"],
+            symbols=["BTC/USD", "SPY"],
             detail="BTC and SPX are unusually correlated",
         )
         corr_1d = _make_corr(anomalies=[anomaly])
@@ -395,7 +395,7 @@ class TestFormatScarcitySummary:
 
     def test_non_scarcity_group_ignored(self):
         """A comovement group with no scarcity symbols produces no scarcity output."""
-        group = _make_group(direction="up", avg_change_pct=2.0, symbols=["SPX", "NDX"])
+        group = _make_group(direction="up", avg_change_pct=2.0, symbols=["SPY", "QQQ"])
         corr_1d = _make_corr(groups=[group])
         result = _format_scarcity_summary(corr_1d)
         assert result == "No notable scarcity-related moves today."
@@ -409,7 +409,7 @@ class TestFormatScarcitySummary:
         group = _make_group(
             direction="up",
             avg_change_pct=1.5,
-            symbols=["LIT", "NDX"],
+            symbols=["LIT", "QQQ"],
         )
         corr_1d = _make_corr(groups=[group], anomalies=[anomaly])
         result = _format_scarcity_summary(corr_1d)
@@ -424,22 +424,22 @@ class TestFormatScarcitySummary:
 
 class TestBuildMovingTogether:
     def test_up_group(self):
-        groups = [_make_group(direction="up", avg_change_pct=2.1, symbols=["SPX", "NDX"])]
+        groups = [_make_group(direction="up", avg_change_pct=2.1, symbols=["SPY", "QQQ"])]
         result = _build_moving_together(groups)
         assert len(result) == 1
         assert result[0]["label"] == "Rallying together"
         assert result[0]["detail"] == "Up avg 2.1%"
-        assert "S&P 500" in result[0]["assets"]
-        assert "Nasdaq 100" in result[0]["assets"]
+        assert "S&P 500 (SPY)" in result[0]["assets"]
+        assert "Nasdaq 100 (QQQ)" in result[0]["assets"]
 
     def test_down_group(self):
-        groups = [_make_group(direction="down", avg_change_pct=-1.8, symbols=["WTI", "NG"])]
+        groups = [_make_group(direction="down", avg_change_pct=-1.8, symbols=["USO", "UNG"])]
         result = _build_moving_together(groups)
         assert len(result) == 1
         assert result[0]["label"] == "Selling together"
         assert result[0]["detail"] == "Down avg 1.8%"
-        assert "Crude Oil (WTI)" in result[0]["assets"]
-        assert "Natural Gas" in result[0]["assets"]
+        assert "Crude Oil (USO)" in result[0]["assets"]
+        assert "Natural Gas (UNG)" in result[0]["assets"]
 
     def test_empty_input(self):
         result = _build_moving_together([])
@@ -453,8 +453,8 @@ class TestBuildMovingTogether:
 
     def test_multiple_groups(self):
         groups = [
-            _make_group(direction="up", avg_change_pct=2.0, symbols=["SPX", "NDX"]),
-            _make_group(direction="down", avg_change_pct=-1.0, symbols=["WTI", "CPER"]),
+            _make_group(direction="up", avg_change_pct=2.0, symbols=["SPY", "QQQ"]),
+            _make_group(direction="down", avg_change_pct=-1.0, symbols=["USO", "CPER"]),
         ]
         result = _build_moving_together(groups)
         assert len(result) == 2
@@ -463,7 +463,7 @@ class TestBuildMovingTogether:
         assert "Selling together" in labels
 
     def test_result_is_moving_together_group_shape(self):
-        groups = [_make_group(direction="up", avg_change_pct=1.0, symbols=["SPX"])]
+        groups = [_make_group(direction="up", avg_change_pct=1.0, symbols=["SPY"])]
         result = _build_moving_together(groups)
         assert len(result) == 1
         entry = result[0]
@@ -495,8 +495,8 @@ class TestFormatDiverging:
         pairs = [
             _make_diverging_pair(),
             _make_diverging_pair(
-                symbol_a="WTI", symbol_b="CPER",
-                label_a="Crude Oil (WTI)", label_b="Copper (CPER)",
+                symbol_a="USO", symbol_b="CPER",
+                label_a="Crude Oil (USO)", label_b="Copper (CPER)",
                 change_pct_a=3.0, change_pct_b=-1.0,
                 baseline_r=0.75,
             ),
@@ -517,10 +517,10 @@ class TestBuildDivergingTogether:
         result = _build_diverging_together(pairs)
         assert len(result) == 1
         assert result[0]["label"] == "Diverging"
-        assert "Nasdaq 100" in result[0]["assets"]
-        assert "S&P 500" in result[0]["assets"]
-        assert "Nasdaq 100" in result[0]["detail"]
-        assert "S&P 500" in result[0]["detail"]
+        assert "Nasdaq 100 (QQQ)" in result[0]["assets"]
+        assert "S&P 500 (SPY)" in result[0]["assets"]
+        assert "Nasdaq 100 (QQQ)" in result[0]["detail"]
+        assert "S&P 500 (SPY)" in result[0]["detail"]
 
     def test_empty_list(self):
         result = _build_diverging_together([])
@@ -530,8 +530,8 @@ class TestBuildDivergingTogether:
         pairs = [_make_diverging_pair()]
         result = _build_diverging_together(pairs)
         detail = result[0]["detail"]
-        assert "Nasdaq 100 -2.0%" in detail
-        assert "S&P 500 +1.5%" in detail
+        assert "Nasdaq 100 (QQQ) -2.0%" in detail
+        assert "S&P 500 (SPY) +1.5%" in detail
 
 
 # ---------------------------------------------------------------------------
@@ -598,7 +598,7 @@ class TestBuildPremarketPrompt:
         assert "BTC tracking SPX unusually" in prompt
 
     def test_contains_comovement_summary(self):
-        group = _make_group(direction="up", avg_change_pct=2.0, symbols=["SPX", "NDX"])
+        group = _make_group(direction="up", avg_change_pct=2.0, symbols=["SPY", "QQQ"])
         corr_1d = _make_corr(groups=[group])
         regime = _make_regime()
         prompt = build_premarket_prompt("2026-02-09", regime, corr_1d)
@@ -647,7 +647,7 @@ class TestBuildClosePrompt:
         assert "- hy_spread (risk_off): HY spreads widening" in prompt
 
     def test_contains_1d_comovement(self):
-        group = _make_group(direction="up", avg_change_pct=2.0, symbols=["SPX", "NDX"])
+        group = _make_group(direction="up", avg_change_pct=2.0, symbols=["SPY", "QQQ"])
         corr_1d = _make_corr(groups=[group])
         corr_1m = _make_corr(period="1M")
         regime = _make_regime()
@@ -657,11 +657,11 @@ class TestBuildClosePrompt:
 
     def test_contains_1m_comovement(self):
         corr_1d = _make_corr()
-        group_1m = _make_group(direction="down", avg_change_pct=-1.0, symbols=["WTI", "CPER"])
+        group_1m = _make_group(direction="down", avg_change_pct=-1.0, symbols=["USO", "CPER"])
         corr_1m = _make_corr(period="1M", groups=[group_1m])
         regime = _make_regime()
         prompt = build_close_prompt("2026-02-09", regime, corr_1d, corr_1m)
-        assert "Crude Oil (WTI)" in prompt
+        assert "Crude Oil (USO)" in prompt
         assert "Selling together" in prompt
 
     def test_contains_scarcity_section(self):
@@ -821,7 +821,7 @@ class TestGeneratePremarket:
         mock_response.content = [MagicMock(text="Summary text.")]
         mock_client.messages.create.return_value = mock_response
 
-        group = _make_group(direction="up", avg_change_pct=2.0, symbols=["SPX", "NDX"])
+        group = _make_group(direction="up", avg_change_pct=2.0, symbols=["SPY", "QQQ"])
         regime = _make_regime()
         corr_1d = _make_corr(groups=[group])
 
@@ -866,7 +866,7 @@ class TestGeneratePremarket:
         mock_response.content = [MagicMock(text="Summary.")]
         mock_client.messages.create.return_value = mock_response
 
-        group = _make_group(direction="up", avg_change_pct=2.0, symbols=["SPX", "NDX"])
+        group = _make_group(direction="up", avg_change_pct=2.0, symbols=["SPY", "QQQ"])
         pair = _make_diverging_pair()
         regime = _make_regime()
         corr_1d = _make_corr(groups=[group], diverging=[pair])
@@ -941,7 +941,7 @@ class TestGenerateClose:
         mock_response.content = [MagicMock(text="Summary.")]
         mock_client.messages.create.return_value = mock_response
 
-        group = _make_group(direction="down", avg_change_pct=-3.0, symbols=["WTI", "CPER"])
+        group = _make_group(direction="down", avg_change_pct=-3.0, symbols=["USO", "CPER"])
         regime = _make_regime()
         corr_1d = _make_corr(groups=[group])
         corr_1m = _make_corr(period="1M")
@@ -956,7 +956,7 @@ class TestGenerateClose:
         mock_client = AsyncMock()
         mock_client.messages.create.side_effect = RuntimeError("fail")
 
-        group_1m = _make_group(direction="up", avg_change_pct=1.0, symbols=["SPX", "NDX"])
+        group_1m = _make_group(direction="up", avg_change_pct=1.0, symbols=["SPY", "QQQ"])
         regime = _make_regime()
         corr_1d = _make_corr()
         corr_1m = _make_corr(period="1M", groups=[group_1m])
@@ -973,7 +973,7 @@ class TestGenerateClose:
         mock_response.content = [MagicMock(text="Summary.")]
         mock_client.messages.create.return_value = mock_response
 
-        group = _make_group(direction="down", avg_change_pct=-1.5, symbols=["WTI", "CPER"])
+        group = _make_group(direction="down", avg_change_pct=-1.5, symbols=["USO", "CPER"])
         pair = _make_diverging_pair()
         regime = _make_regime()
         corr_1d = _make_corr(groups=[group], diverging=[pair])
@@ -1006,7 +1006,7 @@ class TestBuildFallbackSummary:
         assert "VIXY spiking; HY widening" in result
 
     def test_contains_comovement_data(self):
-        group = _make_group(direction="up", avg_change_pct=2.0, symbols=["SPX", "NDX"])
+        group = _make_group(direction="up", avg_change_pct=2.0, symbols=["SPY", "QQQ"])
         corr_1d = _make_corr(groups=[group])
         regime = _make_regime()
         result = _build_fallback_summary("close", regime, corr_1d)
@@ -1029,12 +1029,12 @@ class TestBuildFallbackSummary:
 
     def test_includes_1m_comovement_when_provided(self):
         corr_1d = _make_corr()
-        group_1m = _make_group(direction="down", avg_change_pct=-1.5, symbols=["WTI", "NG"])
+        group_1m = _make_group(direction="down", avg_change_pct=-1.5, symbols=["USO", "UNG"])
         corr_1m = _make_corr(period="1M", groups=[group_1m])
         regime = _make_regime()
         result = _build_fallback_summary("close", regime, corr_1d, corr_1m)
         assert "Monthly co-movement:" in result
-        assert "Crude Oil (WTI)" in result
+        assert "Crude Oil (USO)" in result
 
     def test_no_1m_section_when_none(self):
         corr_1d = _make_corr()

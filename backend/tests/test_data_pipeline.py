@@ -168,10 +168,10 @@ class TestGetActiveSymbols:
     def test_us_hours_includes_equities_and_crypto(self):
         t = datetime(2025, 1, 6, 10, 0, tzinfo=_ET)
         active = get_active_symbols(t)
-        assert "SPX" in active
-        assert "NDX" in active
+        assert "SPY" in active
+        assert "QQQ" in active
         assert "UUP" in active
-        assert "WTI" in active
+        assert "USO" in active
         assert "URA" in active
         assert "BTC/USD" in active
         assert "ETH/USD" in active
@@ -192,7 +192,7 @@ class TestGetActiveSymbols:
         active = get_active_symbols(t)
         assert "UKX" in active
         assert "BTC/USD" in active
-        assert "SPX" not in active
+        assert "SPY" not in active
         assert "EWJ" not in active
         assert "FEZ" not in active
 
@@ -201,7 +201,7 @@ class TestGetActiveSymbols:
         t = datetime(2025, 1, 6, 22, 0, tzinfo=_ET)
         active = get_active_symbols(t)
         assert "BTC/USD" in active
-        assert "SPX" not in active
+        assert "SPY" not in active
         assert "EWJ" not in active
         assert "EWH" not in active
 
@@ -222,7 +222,7 @@ class TestSaveQuotes:
     async def test_saves_single_quote(self, tmp_path):
         db_path = str(tmp_path / "test.db")
         quotes = {
-            "SPX": {
+            "SPY": {
                 "price": 5100.50,
                 "change_pct": 0.75,
                 "change_abs": 38.0,
@@ -234,7 +234,7 @@ class TestSaveQuotes:
 
         rows = await _read_snapshots(db_path)
         assert len(rows) == 1
-        assert rows[0]["symbol"] == "SPX"
+        assert rows[0]["symbol"] == "SPY"
         assert rows[0]["asset_class"] == "equities"
         assert rows[0]["price"] == 5100.50
         assert rows[0]["change_pct"] == 0.75
@@ -245,7 +245,7 @@ class TestSaveQuotes:
     async def test_saves_multiple_quotes(self, tmp_path):
         db_path = str(tmp_path / "test.db")
         quotes = {
-            "SPX": {"price": 5100.0, "change_pct": 0.5, "change_abs": 25.0, "timestamp": "t1"},
+            "SPY": {"price": 5100.0, "change_pct": 0.5, "change_abs": 25.0, "timestamp": "t1"},
             "BTC/USD": {"price": 97000.0, "change_pct": 2.1, "change_abs": 2000.0, "timestamp": "t1"},
             "DGS10": {"price": 4.25, "change_pct": -0.5, "change_abs": -0.02, "timestamp": "t1"},
         }
@@ -254,11 +254,11 @@ class TestSaveQuotes:
 
         rows = await _read_snapshots(db_path)
         symbols = {r["symbol"] for r in rows}
-        assert symbols == {"SPX", "BTC/USD", "DGS10"}
+        assert symbols == {"SPY", "BTC/USD", "DGS10"}
 
         # Verify asset classes
         asset_classes = {r["symbol"]: r["asset_class"] for r in rows}
-        assert asset_classes["SPX"] == "equities"
+        assert asset_classes["SPY"] == "equities"
         assert asset_classes["BTC/USD"] == "crypto"
         assert asset_classes["DGS10"] == "rates"
 
@@ -266,15 +266,15 @@ class TestSaveQuotes:
     async def test_skips_quotes_without_price(self, tmp_path):
         db_path = str(tmp_path / "test.db")
         quotes = {
-            "SPX": {"change_pct": 0.5, "timestamp": "t1"},  # no price
-            "NDX": {"price": 18000.0, "change_pct": 0.3, "change_abs": 50.0, "timestamp": "t1"},
+            "SPY": {"change_pct": 0.5, "timestamp": "t1"},  # no price
+            "QQQ": {"price": 18000.0, "change_pct": 0.3, "change_abs": 50.0, "timestamp": "t1"},
         }
         saved = await save_quotes(quotes)
         assert saved == 1
 
         rows = await _read_snapshots(db_path)
         assert len(rows) == 1
-        assert rows[0]["symbol"] == "NDX"
+        assert rows[0]["symbol"] == "QQQ"
 
     @pytest.mark.asyncio
     async def test_empty_quotes_returns_zero(self):
@@ -304,7 +304,7 @@ class TestFetchTwelveDataQuotes:
 
         mock_provider = AsyncMock()
         mock_provider.get_quotes_for_symbols.return_value = {
-            "SPX": {"price": 5100.0, "change_pct": 0.5, "change_abs": 25.0, "timestamp": "t1"},
+            "SPY": {"price": 5100.0, "change_pct": 0.5, "change_abs": 25.0, "timestamp": "t1"},
             "BTC/USD": {"price": 97000.0, "change_pct": 2.1, "change_abs": 2000.0, "timestamp": "t1"},
         }
 
@@ -320,14 +320,14 @@ class TestFetchTwelveDataQuotes:
         # Verify provider was called with active symbols
         mock_provider.get_quotes_for_symbols.assert_called_once()
         called_symbols = mock_provider.get_quotes_for_symbols.call_args[0][0]
-        assert "SPX" in called_symbols
+        assert "SPY" in called_symbols
         assert "BTC/USD" in called_symbols
 
         # Verify data landed in DB
         rows = await _read_snapshots(db_path)
         assert len(rows) == 2
         symbols = {r["symbol"] for r in rows}
-        assert symbols == {"SPX", "BTC/USD"}
+        assert symbols == {"SPY", "BTC/USD"}
 
     @pytest.mark.asyncio
     async def test_skips_when_no_markets_open(self, tmp_path, monkeypatch):
@@ -459,8 +459,8 @@ _FAKE_CORR_1D = {
         {
             "direction": "up",
             "avg_change_pct": 1.5,
-            "symbols": ["SPX", "NDX"],
-            "labels": ["S&P 500", "Nasdaq 100"],
+            "symbols": ["SPY", "QQQ"],
+            "labels": ["S&P 500 (SPY)", "Nasdaq 100 (QQQ)"],
         }
     ],
     "anomalies": [],
@@ -482,7 +482,7 @@ _FAKE_SUMMARY_PREMARKET = {
     "period": "premarket",
     "summary_text": "Markets are calm overnight.",
     "moving_together": [
-        {"label": "Rallying together", "assets": ["S&P 500", "Nasdaq 100"], "detail": "Up avg 1.5%"},
+        {"label": "Rallying together", "assets": ["S&P 500 (SPY)", "Nasdaq 100 (QQQ)"], "detail": "Up avg 1.5%"},
     ],
     "regime_label": "RISK-ON",
     "regime_reason": "Broad risk appetite",
@@ -493,7 +493,7 @@ _FAKE_SUMMARY_CLOSE = {
     "period": "close",
     "summary_text": "A strong day across equities.",
     "moving_together": [
-        {"label": "Rallying together", "assets": ["S&P 500", "Nasdaq 100"], "detail": "Up avg 1.5%"},
+        {"label": "Rallying together", "assets": ["S&P 500 (SPY)", "Nasdaq 100 (QQQ)"], "detail": "Up avg 1.5%"},
     ],
     "regime_label": "RISK-ON",
     "regime_reason": "Broad risk appetite",
@@ -550,7 +550,7 @@ class TestSummaryPersistence:
         moving = json.loads(row["moving_together_json"])
         assert len(moving) == 1
         assert moving[0]["label"] == "Rallying together"
-        assert "S&P 500" in moving[0]["assets"]
+        assert "S&P 500 (SPY)" in moving[0]["assets"]
         assert "detail" in moving[0]
 
         # correlations_json should contain raw correlation data

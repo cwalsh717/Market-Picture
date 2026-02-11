@@ -57,8 +57,8 @@ const YIELD_SPREAD_SYMBOLS = new Set([
 ]);
 
 const ASSET_EXPLAINERS = {
-  SPX: "The S&P 500 tracks the 500 largest US companies — the benchmark for the American stock market.",
-  NDX: "The Nasdaq 100 is heavily weighted toward tech giants like Apple, Microsoft, and Nvidia.",
+  SPY: "The S&P 500 ETF tracks the 500 largest US companies — the benchmark for the American stock market.",
+  QQQ: "The Nasdaq 100 ETF is heavily weighted toward tech giants like Apple, Microsoft, and Nvidia.",
   IWM: "The Russell 2000 tracks small US companies — often a gauge of domestic economic health.",
   VIXY: "Tracks short-term VIX futures — rises when markets expect turbulence ahead.",
   EWJ: "An ETF tracking Japanese stocks — reflects Asia-Pacific economic trends.",
@@ -66,9 +66,9 @@ const ASSET_EXPLAINERS = {
   FEZ: "An ETF tracking the 50 largest eurozone stocks across France, Germany, and others.",
   EWH: "An ETF tracking Hong Kong stocks — a barometer for China-exposed markets.",
   UUP: "Tracks the US dollar against a basket of major currencies. A strong dollar can pressure commodities and emerging markets.",
-  WTI: "West Texas Intermediate crude oil — the US benchmark for oil prices.",
-  NG: "US natural gas futures — sensitive to weather, storage, and energy demand.",
-  XAU: "Gold — the classic safe-haven asset. Tends to rise when investors fear uncertainty.",
+  USO: "The US Oil Fund ETF tracks crude oil futures — a proxy for oil prices.",
+  UNG: "The US Natural Gas Fund ETF — sensitive to weather, storage, and energy demand.",
+  GLD: "The SPDR Gold ETF — the classic safe-haven asset. Tends to rise when investors fear uncertainty.",
   CPER: "A copper ETF — copper is sometimes called 'Dr. Copper' because its demand reflects global industrial health.",
   URA: "A uranium ETF — tracks companies involved in uranium mining and nuclear energy.",
   LIT: "A lithium ETF — tracks companies in lithium mining and battery production.",

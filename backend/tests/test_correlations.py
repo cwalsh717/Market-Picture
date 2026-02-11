@@ -214,7 +214,7 @@ class TestNormalizePair:
         assert _normalize_pair("A", "B") == ("A", "B")
 
     def test_reversed(self):
-        assert _normalize_pair("SPX", "BTC/USD") == ("BTC/USD", "SPX")
+        assert _normalize_pair("SPY", "BTC/USD") == ("BTC/USD", "SPY")
 
 
 # ---------------------------------------------------------------------------
@@ -225,8 +225,8 @@ class TestNormalizePair:
 class TestGroupByComovement:
     def test_groups_by_direction(self):
         snapshots = {
-            "SPX": {"change_pct": 2.0},
-            "NDX": {"change_pct": 2.5},
+            "SPY": {"change_pct": 2.0},
+            "QQQ": {"change_pct": 2.5},
             "IWM": {"change_pct": -1.5},
             "VIXY": {"change_pct": -2.0},
         }
@@ -234,14 +234,14 @@ class TestGroupByComovement:
         up = [g for g in groups if g["direction"] == "up"]
         down = [g for g in groups if g["direction"] == "down"]
         assert len(up) == 1
-        assert set(up[0]["symbols"]) == {"SPX", "NDX"}
+        assert set(up[0]["symbols"]) == {"SPY", "QQQ"}
         assert len(down) == 1
         assert set(down[0]["symbols"]) == {"IWM", "VIXY"}
 
     def test_filters_flat_assets(self):
         snapshots = {
-            "SPX": {"change_pct": 0.1},  # below min threshold
-            "NDX": {"change_pct": 0.05},
+            "SPY": {"change_pct": 0.1},  # below min threshold
+            "QQQ": {"change_pct": 0.05},
         }
         groups = _group_by_comovement(snapshots)
         assert groups == []
@@ -249,8 +249,8 @@ class TestGroupByComovement:
     def test_magnitude_banding(self):
         """Assets far apart in magnitude get split into separate groups."""
         snapshots = {
-            "SPX": {"change_pct": 5.0},
-            "NDX": {"change_pct": 4.5},
+            "SPY": {"change_pct": 5.0},
+            "QQQ": {"change_pct": 4.5},
             "IWM": {"change_pct": 1.0},
             "UKX": {"change_pct": 0.8},
         }
@@ -263,13 +263,13 @@ class TestGroupByComovement:
         assert _group_by_comovement({}) == []
 
     def test_none_change_pct_skipped(self):
-        snapshots = {"SPX": {"change_pct": None}}
+        snapshots = {"SPY": {"change_pct": None}}
         assert _group_by_comovement(snapshots) == []
 
     def test_single_asset_direction_not_grouped(self):
         """A lone asset in a direction doesn't form a group."""
         snapshots = {
-            "SPX": {"change_pct": 2.0},
+            "SPY": {"change_pct": 2.0},
             "VIXY": {"change_pct": -1.5},
         }
         groups = _group_by_comovement(snapshots)
@@ -284,9 +284,9 @@ class TestGroupByComovement:
 class TestDetectUnexpectedConvergence:
     def test_btc_spx_convergence_flagged(self):
         pairs = {
-            ("BTC/USD", "SPX"): {
+            ("BTC/USD", "SPY"): {
                 "symbol_a": "BTC/USD",
-                "symbol_b": "SPX",
+                "symbol_b": "SPY",
                 "correlation": 0.75,
                 "data_points": 20,
             },
@@ -298,9 +298,9 @@ class TestDetectUnexpectedConvergence:
 
     def test_normal_uncorrelated_no_flag(self):
         pairs = {
-            ("BTC/USD", "SPX"): {
+            ("BTC/USD", "SPY"): {
                 "symbol_a": "BTC/USD",
-                "symbol_b": "SPX",
+                "symbol_b": "SPY",
                 "correlation": 0.15,
                 "data_points": 20,
             },
@@ -329,8 +329,8 @@ class TestDetectUnexpectedConvergence:
 class TestDetectBrokenCorrelations:
     def test_spx_vix_breakdown_flagged(self):
         pairs = {
-            ("SPX", "VIXY"): {
-                "symbol_a": "SPX",
+            ("SPY", "VIXY"): {
+                "symbol_a": "SPY",
                 "symbol_b": "VIXY",
                 "correlation": 0.10,
                 "data_points": 20,
@@ -342,9 +342,9 @@ class TestDetectBrokenCorrelations:
 
     def test_spx_ndx_diverging_flagged(self):
         pairs = {
-            ("NDX", "SPX"): {
-                "symbol_a": "NDX",
-                "symbol_b": "SPX",
+            ("QQQ", "SPY"): {
+                "symbol_a": "QQQ",
+                "symbol_b": "SPY",
                 "correlation": 0.30,
                 "data_points": 20,
             },
@@ -354,9 +354,9 @@ class TestDetectBrokenCorrelations:
 
     def test_normal_high_correlation_no_flag(self):
         pairs = {
-            ("NDX", "SPX"): {
-                "symbol_a": "NDX",
-                "symbol_b": "SPX",
+            ("QQQ", "SPY"): {
+                "symbol_a": "QQQ",
+                "symbol_b": "SPY",
                 "correlation": 0.88,
                 "data_points": 20,
             },
@@ -373,8 +373,8 @@ class TestDetectBrokenCorrelations:
 class TestDetectScarcityDivergence:
     def test_ura_diverging_flagged(self):
         pairs = {
-            ("SPX", "URA"): {
-                "symbol_a": "SPX",
+            ("SPY", "URA"): {
+                "symbol_a": "SPY",
                 "symbol_b": "URA",
                 "correlation": -0.20,
                 "data_points": 20,
@@ -387,8 +387,8 @@ class TestDetectScarcityDivergence:
 
     def test_ura_tracking_normally_no_flag(self):
         pairs = {
-            ("SPX", "URA"): {
-                "symbol_a": "SPX",
+            ("SPY", "URA"): {
+                "symbol_a": "SPY",
                 "symbol_b": "URA",
                 "correlation": 0.35,
                 "data_points": 20,
@@ -411,7 +411,7 @@ class TestDetect1dAnomalies:
     def test_vix_up_with_spx_up(self):
         """SPX and VIXY both up is anomalous (normally inversely correlated)."""
         snapshots = {
-            "SPX": {"change_pct": 2.0},
+            "SPY": {"change_pct": 2.0},
             "VIXY": {"change_pct": 1.5},
         }
         anomalies = _detect_1d_anomalies(snapshots)
@@ -422,7 +422,7 @@ class TestDetect1dAnomalies:
         """BTC and SPX both up is anomalous (normally uncorrelated)."""
         snapshots = {
             "BTC/USD": {"change_pct": 3.0},
-            "SPX": {"change_pct": 2.5},
+            "SPY": {"change_pct": 2.5},
         }
         anomalies = _detect_1d_anomalies(snapshots)
         types = [a["anomaly_type"] for a in anomalies]
@@ -431,8 +431,8 @@ class TestDetect1dAnomalies:
     def test_normally_correlated_opposite_directions(self):
         """NDX and SPX moving opposite is anomalous (normally r=0.90)."""
         snapshots = {
-            "NDX": {"change_pct": -2.0},
-            "SPX": {"change_pct": 1.5},
+            "QQQ": {"change_pct": -2.0},
+            "SPY": {"change_pct": 1.5},
         }
         anomalies = _detect_1d_anomalies(snapshots)
         types = [a["anomaly_type"] for a in anomalies]
@@ -440,14 +440,14 @@ class TestDetect1dAnomalies:
 
     def test_flat_assets_skipped(self):
         snapshots = {
-            "SPX": {"change_pct": 0.1},
+            "SPY": {"change_pct": 0.1},
             "VIXY": {"change_pct": 0.1},
         }
         anomalies = _detect_1d_anomalies(snapshots)
         assert anomalies == []
 
     def test_missing_data_graceful(self):
-        snapshots = {"SPX": {"change_pct": 2.0}}
+        snapshots = {"SPY": {"change_pct": 2.0}}
         anomalies = _detect_1d_anomalies(snapshots)
         assert anomalies == []
 
@@ -461,19 +461,19 @@ class TestDetectDivergingPairs:
     def test_opposite_direction_detected(self):
         """NDX up, SPX down with high baseline r=0.90 should flag a diverging pair."""
         snapshots = {
-            "NDX": {"change_pct": 2.0},
-            "SPX": {"change_pct": -1.5},
+            "QQQ": {"change_pct": 2.0},
+            "SPY": {"change_pct": -1.5},
         }
         pairs = _detect_diverging_pairs(snapshots)
         assert len(pairs) == 1
-        assert pairs[0]["symbol_a"] == "NDX"
-        assert pairs[0]["symbol_b"] == "SPX"
+        assert pairs[0]["symbol_a"] == "QQQ"
+        assert pairs[0]["symbol_b"] == "SPY"
 
     def test_same_direction_not_flagged(self):
         """Both NDX and SPX up -- same direction should not produce a diverging pair."""
         snapshots = {
-            "NDX": {"change_pct": 2.0},
-            "SPX": {"change_pct": 1.5},
+            "QQQ": {"change_pct": 2.0},
+            "SPY": {"change_pct": 1.5},
         }
         pairs = _detect_diverging_pairs(snapshots)
         assert pairs == []
@@ -481,8 +481,8 @@ class TestDetectDivergingPairs:
     def test_flat_assets_skipped(self):
         """Changes below comovement_min_change_pct (0.3) should be ignored."""
         snapshots = {
-            "NDX": {"change_pct": 0.1},
-            "SPX": {"change_pct": -0.1},
+            "QQQ": {"change_pct": 0.1},
+            "SPY": {"change_pct": -0.1},
         }
         pairs = _detect_diverging_pairs(snapshots)
         assert pairs == []
@@ -491,20 +491,20 @@ class TestDetectDivergingPairs:
         """BTC/SPX baseline is 0.10, below diverging_baseline_threshold (0.5)."""
         snapshots = {
             "BTC/USD": {"change_pct": 3.0},
-            "SPX": {"change_pct": -2.0},
+            "SPY": {"change_pct": -2.0},
         }
         pairs = _detect_diverging_pairs(snapshots)
         # No pair should be flagged because baseline r=0.10 < threshold 0.5
         btc_spx = [
             p for p in pairs
-            if set([p["symbol_a"], p["symbol_b"]]) == {"BTC/USD", "SPX"}
+            if set([p["symbol_a"], p["symbol_b"]]) == {"BTC/USD", "SPY"}
         ]
         assert btc_spx == []
 
     def test_missing_snapshots_handled(self):
         """Only one asset in snapshots -- should not crash, return empty list."""
         snapshots = {
-            "SPX": {"change_pct": 2.0},
+            "SPY": {"change_pct": 2.0},
         }
         pairs = _detect_diverging_pairs(snapshots)
         assert pairs == []
@@ -512,8 +512,8 @@ class TestDetectDivergingPairs:
     def test_none_change_pct_handled(self):
         """NDX has change_pct=None -- should not crash, return empty list."""
         snapshots = {
-            "NDX": {"change_pct": None},
-            "SPX": {"change_pct": -1.5},
+            "QQQ": {"change_pct": None},
+            "SPY": {"change_pct": -1.5},
         }
         pairs = _detect_diverging_pairs(snapshots)
         assert pairs == []
@@ -521,8 +521,8 @@ class TestDetectDivergingPairs:
     def test_output_structure(self):
         """Verify that DivergingPair dict has all expected keys."""
         snapshots = {
-            "NDX": {"change_pct": 2.0},
-            "SPX": {"change_pct": -1.5},
+            "QQQ": {"change_pct": 2.0},
+            "SPY": {"change_pct": -1.5},
         }
         pairs = _detect_diverging_pairs(snapshots)
         assert len(pairs) >= 1
@@ -545,9 +545,9 @@ class TestGetAllLatestSnapshots:
         old_ts = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
         new_ts = datetime.now(timezone.utc).isoformat()
 
-        await _insert_snapshot(db_path, "SPX", 5000.0, timestamp=old_ts)
-        await _insert_snapshot(db_path, "SPX", 5100.0, timestamp=new_ts)
-        await _insert_snapshot(db_path, "NDX", 18000.0, timestamp=new_ts)
+        await _insert_snapshot(db_path, "SPY", 5000.0, timestamp=old_ts)
+        await _insert_snapshot(db_path, "SPY", 5100.0, timestamp=new_ts)
+        await _insert_snapshot(db_path, "QQQ", 18000.0, timestamp=new_ts)
 
         conn = await _conn(db_path)
         try:
@@ -555,8 +555,8 @@ class TestGetAllLatestSnapshots:
         finally:
             await conn.close()
 
-        assert result["SPX"]["price"] == 5100.0
-        assert result["NDX"]["price"] == 18000.0
+        assert result["SPY"]["price"] == 5100.0
+        assert result["QQQ"]["price"] == 18000.0
 
     @pytest.mark.asyncio
     async def test_empty_db(self, tmp_path):
@@ -582,18 +582,18 @@ class TestGetDailyCloseSeries:
         # Two snapshots on the same calendar day -- should keep latest.
         day_ts_early = "2026-02-09T10:00:00+00:00"
         day_ts_late = "2026-02-09T15:00:00+00:00"
-        await _insert_snapshot(db_path, "SPX", 5000.0, timestamp=day_ts_early)
-        await _insert_snapshot(db_path, "SPX", 5100.0, timestamp=day_ts_late)
+        await _insert_snapshot(db_path, "SPY", 5000.0, timestamp=day_ts_early)
+        await _insert_snapshot(db_path, "SPY", 5100.0, timestamp=day_ts_late)
 
         conn = await _conn(db_path)
         try:
-            result = await _get_daily_close_series(conn, ["SPX"], days_back=3)
+            result = await _get_daily_close_series(conn, ["SPY"], days_back=3)
         finally:
             await conn.close()
 
-        assert "SPX" in result
-        assert len(result["SPX"]) == 1
-        assert result["SPX"][0][1] == 5100.0
+        assert "SPY" in result
+        assert len(result["SPY"]) == 1
+        assert result["SPY"][0][1] == 5100.0
 
     @pytest.mark.asyncio
     async def test_respects_cutoff(self, tmp_path):
@@ -602,16 +602,16 @@ class TestGetDailyCloseSeries:
         old_ts = (now - timedelta(days=30)).isoformat()
         new_ts = (now - timedelta(days=1)).isoformat()
 
-        await _insert_snapshot(db_path, "SPX", 5000.0, timestamp=old_ts)
-        await _insert_snapshot(db_path, "SPX", 5100.0, timestamp=new_ts)
+        await _insert_snapshot(db_path, "SPY", 5000.0, timestamp=old_ts)
+        await _insert_snapshot(db_path, "SPY", 5100.0, timestamp=new_ts)
 
         conn = await _conn(db_path)
         try:
-            result = await _get_daily_close_series(conn, ["SPX"], days_back=7)
+            result = await _get_daily_close_series(conn, ["SPY"], days_back=7)
         finally:
             await conn.close()
 
-        assert len(result["SPX"]) == 1  # Only recent one within 7 days.
+        assert len(result["SPY"]) == 1  # Only recent one within 7 days.
 
     @pytest.mark.asyncio
     async def test_missing_symbols(self, tmp_path):
@@ -632,31 +632,31 @@ class TestGetDailyCloseSeries:
 class TestGroupByCorrelation:
     def test_forms_groups_above_threshold(self):
         pairs = {
-            ("NDX", "SPX"): {
-                "symbol_a": "NDX",
-                "symbol_b": "SPX",
+            ("QQQ", "SPY"): {
+                "symbol_a": "QQQ",
+                "symbol_b": "SPY",
                 "correlation": 0.92,
                 "data_points": 20,
             },
         }
         returns = {
-            "NDX": [("d1", 1.0), ("d2", 2.0)],
-            "SPX": [("d1", 1.5), ("d2", 1.8)],
+            "QQQ": [("d1", 1.0), ("d2", 2.0)],
+            "SPY": [("d1", 1.5), ("d2", 1.8)],
         }
         groups = _group_by_correlation(pairs, returns, threshold=0.7)
         assert len(groups) == 1
-        assert set(groups[0]["symbols"]) == {"NDX", "SPX"}
+        assert set(groups[0]["symbols"]) == {"QQQ", "SPY"}
 
     def test_below_threshold_no_group(self):
         pairs = {
-            ("NDX", "SPX"): {
-                "symbol_a": "NDX",
-                "symbol_b": "SPX",
+            ("QQQ", "SPY"): {
+                "symbol_a": "QQQ",
+                "symbol_b": "SPY",
                 "correlation": 0.50,
                 "data_points": 20,
             },
         }
-        returns = {"NDX": [("d1", 1.0)], "SPX": [("d1", 1.5)]}
+        returns = {"QQQ": [("d1", 1.0)], "SPY": [("d1", 1.5)]}
         groups = _group_by_correlation(pairs, returns, threshold=0.7)
         assert groups == []
 
@@ -670,8 +670,8 @@ class TestDetectCorrelations:
     @pytest.mark.asyncio
     async def test_1d_with_seeded_data(self, tmp_path):
         db_path = str(tmp_path / "test.db")
-        await _insert_snapshot(db_path, "SPX", 5100.0, change_pct=2.0)
-        await _insert_snapshot(db_path, "NDX", 18000.0, change_pct=2.5)
+        await _insert_snapshot(db_path, "SPY", 5100.0, change_pct=2.0)
+        await _insert_snapshot(db_path, "QQQ", 18000.0, change_pct=2.5)
         await _insert_snapshot(db_path, "VIXY", 20.0, change_pct=1.5)
 
         conn = await _conn(db_path)
@@ -698,8 +698,8 @@ class TestDetectCorrelations:
         # SPX and NDX move together (perfectly correlated prices).
         spx_prices = [5000 + i * 10 for i in range(25)]
         ndx_prices = [18000 + i * 30 for i in range(25)]
-        await _seed_daily_history(db_path, "SPX", spx_prices)
-        await _seed_daily_history(db_path, "NDX", ndx_prices)
+        await _seed_daily_history(db_path, "SPY", spx_prices)
+        await _seed_daily_history(db_path, "QQQ", ndx_prices)
 
         conn = await _conn(db_path)
         try:
@@ -730,8 +730,8 @@ class TestDetectCorrelations:
     async def test_insufficient_data_for_correlation(self, tmp_path):
         """Only 2 days of data -- below min_data_points threshold."""
         db_path = str(tmp_path / "test.db")
-        await _seed_daily_history(db_path, "SPX", [5000, 5100])
-        await _seed_daily_history(db_path, "NDX", [18000, 18100])
+        await _seed_daily_history(db_path, "SPY", [5000, 5100])
+        await _seed_daily_history(db_path, "QQQ", [18000, 18100])
 
         conn = await _conn(db_path)
         try:
