@@ -23,8 +23,9 @@ logger = logging.getLogger("e2e_test")
 
 
 async def main() -> int:
-    from backend.config import DATABASE_PATH
-    from backend.db import init_db, get_connection
+    from sqlalchemy import text
+
+    from backend.db import init_db, get_session
     from backend.providers.twelve_data import TwelveDataProvider
     from backend.providers.fred import FredProvider
     from backend.jobs.daily_update import save_quotes
@@ -38,7 +39,6 @@ async def main() -> int:
     print("=" * 70)
     print("  MARKET PICTURE — END-TO-END PIPELINE TEST")
     print("=" * 70)
-    print(f"\nDatabase: {DATABASE_PATH}")
 
     # -----------------------------------------------------------------------
     # Step 1: Initialize DB
@@ -93,11 +93,11 @@ async def main() -> int:
     # Step 4: Regime classification
     # -----------------------------------------------------------------------
     print("\n--- Step 4: Regime classification ---")
-    conn = await get_connection()
+    session = await get_session()
     try:
-        regime = await classify_regime(conn)
+        regime = await classify_regime(session)
     finally:
-        await conn.close()
+        await session.close()
 
     print(f"\n  REGIME: {regime['label']}")
     print(f"  Reason: {regime['reason']}")
@@ -117,34 +117,37 @@ async def main() -> int:
     # -----------------------------------------------------------------------
     print("\n--- Step 6: Store in summaries table ---")
     today = datetime.now(_ET).date().isoformat()
-    conn = await get_connection()
+    session = await get_session()
     try:
-        await conn.execute(
-            """
-            INSERT INTO summaries
-                (date, period, summary_text, regime_label, regime_reason,
-                 regime_signals_json)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                today,
-                "close",
-                summary["summary_text"],
-                regime["label"],
-                regime["reason"],
-                json.dumps(regime["signals"]),
-            ),
+        await session.execute(
+            text("""
+                INSERT INTO summaries
+                    (date, period, summary_text, regime_label, regime_reason,
+                     regime_signals_json)
+                VALUES (:date, :period, :summary_text, :regime_label, :regime_reason,
+                        :regime_signals_json)
+            """),
+            {
+                "date": today,
+                "period": "close",
+                "summary_text": summary["summary_text"],
+                "regime_label": regime["label"],
+                "regime_reason": regime["reason"],
+                "regime_signals_json": json.dumps(regime["signals"]),
+            },
         )
-        await conn.commit()
+        await session.commit()
 
         # Verify it was stored
-        cursor = await conn.execute(
-            "SELECT * FROM summaries WHERE date = ? AND period = ? ORDER BY id DESC LIMIT 1",
-            (today, "close"),
+        result = await session.execute(
+            text(
+                "SELECT * FROM summaries WHERE date = :date AND period = :period ORDER BY id DESC LIMIT 1"
+            ),
+            {"date": today, "period": "close"},
         )
-        row = await cursor.fetchone()
+        row = result.mappings().first()
     finally:
-        await conn.close()
+        await session.close()
 
     if row is None:
         print("  ERROR: Row not found in summaries table after insert!")

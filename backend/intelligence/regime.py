@@ -10,7 +10,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import TypedDict
 
-import aiosqlite
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import REGIME_THRESHOLDS
 
@@ -45,47 +46,47 @@ class RegimeResult(TypedDict):
 
 
 async def _get_latest_snapshot(
-    conn: aiosqlite.Connection,
+    session: AsyncSession,
     symbol: str,
 ) -> dict | None:
     """Return the most recent market_snapshots row for *symbol*."""
-    cursor = await conn.execute(
-        """
-        SELECT price, change_pct, change_abs, timestamp
-        FROM market_snapshots
-        WHERE symbol = ?
-        ORDER BY timestamp DESC
-        LIMIT 1
-        """,
-        (symbol,),
+    result = await session.execute(
+        text("""
+            SELECT price, change_pct, change_abs, timestamp
+            FROM market_snapshots
+            WHERE symbol = :symbol
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """),
+        {"symbol": symbol},
     )
-    row = await cursor.fetchone()
+    row = result.mappings().first()
     return dict(row) if row else None
 
 
 async def _get_snapshot_n_days_ago(
-    conn: aiosqlite.Connection,
+    session: AsyncSession,
     symbol: str,
     days_back: int,
 ) -> dict | None:
     """Return the closest snapshot to *days_back* days in the past."""
     target = datetime.now(timezone.utc) - timedelta(days=days_back)
-    cursor = await conn.execute(
-        """
-        SELECT price, change_pct, change_abs, timestamp
-        FROM market_snapshots
-        WHERE symbol = ? AND timestamp <= ?
-        ORDER BY timestamp DESC
-        LIMIT 1
-        """,
-        (symbol, target.isoformat()),
+    result = await session.execute(
+        text("""
+            SELECT price, change_pct, change_abs, timestamp
+            FROM market_snapshots
+            WHERE symbol = :symbol AND timestamp <= :target
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """),
+        {"symbol": symbol, "target": target.isoformat()},
     )
-    row = await cursor.fetchone()
+    row = result.mappings().first()
     return dict(row) if row else None
 
 
 async def _compute_sma(
-    conn: aiosqlite.Connection,
+    session: AsyncSession,
     symbol: str,
     period: int,
 ) -> float | None:
@@ -95,17 +96,17 @@ async def _compute_sma(
     day, then averages the most recent *period* days.  Returns ``None`` when
     fewer than *period* days of data are available.
     """
-    cursor = await conn.execute(
-        """
-        SELECT date(timestamp) AS day, price
-        FROM market_snapshots
-        WHERE symbol = ?
-        ORDER BY timestamp DESC
-        LIMIT 500
-        """,
-        (symbol,),
+    result = await session.execute(
+        text("""
+            SELECT substr(timestamp, 1, 10) AS day, price
+            FROM market_snapshots
+            WHERE symbol = :symbol
+            ORDER BY timestamp DESC
+            LIMIT 500
+        """),
+        {"symbol": symbol},
     )
-    rows = await cursor.fetchall()
+    rows = result.mappings().all()
     if not rows:
         return None
 
@@ -128,14 +129,14 @@ async def _compute_sma(
 # ---------------------------------------------------------------------------
 
 
-async def _eval_spx_trend(conn: aiosqlite.Connection) -> Signal:
+async def _eval_spx_trend(session: AsyncSession) -> Signal:
     """S&P 500 price vs its N-day simple moving average."""
     period = int(REGIME_THRESHOLDS["spx_ma_period"])
-    latest = await _get_latest_snapshot(conn, "SPY")
+    latest = await _get_latest_snapshot(session, "SPY")
     if latest is None:
         return Signal(name="spx_trend", direction="neutral", detail="S&P 500 data unavailable")
 
-    sma = await _compute_sma(conn, "SPY", period)
+    sma = await _compute_sma(session, "SPY", period)
     if sma is None:
         return Signal(name="spx_trend", direction="neutral", detail=f"insufficient history for {period}-day MA")
 
@@ -153,14 +154,14 @@ async def _eval_spx_trend(conn: aiosqlite.Connection) -> Signal:
     )
 
 
-async def _eval_vix(conn: aiosqlite.Connection) -> Signal:
+async def _eval_vix(session: AsyncSession) -> Signal:
     """VIXY percentage-change check for volatility direction.
 
     VIXY is a VIX short-term futures ETF — its daily percentage move
     indicates whether volatility is spiking (risk-off) or collapsing
     (risk-on).
     """
-    latest = await _get_latest_snapshot(conn, "VIXY")
+    latest = await _get_latest_snapshot(session, "VIXY")
     if latest is None or latest.get("change_pct") is None:
         return Signal(name="vix", direction="neutral", detail="VIXY data unavailable")
 
@@ -172,9 +173,9 @@ async def _eval_vix(conn: aiosqlite.Connection) -> Signal:
     return Signal(name="vix", direction="neutral", detail=f"VIXY stable ({change:+.1f}%)")
 
 
-async def _eval_hy_spread(conn: aiosqlite.Connection) -> Signal:
+async def _eval_hy_spread(session: AsyncSession) -> Signal:
     """HY credit spread level and week-over-week trend."""
-    latest = await _get_latest_snapshot(conn, "BAMLH0A0HYM2")
+    latest = await _get_latest_snapshot(session, "BAMLH0A0HYM2")
     if latest is None:
         return Signal(name="hy_spread", direction="neutral", detail="HY spread data unavailable")
 
@@ -189,7 +190,7 @@ async def _eval_hy_spread(conn: aiosqlite.Connection) -> Signal:
         )
 
     # Week-over-week trend
-    week_ago = await _get_snapshot_n_days_ago(conn, "BAMLH0A0HYM2", 7)
+    week_ago = await _get_snapshot_n_days_ago(session, "BAMLH0A0HYM2", 7)
     if week_ago is not None:
         change_bps = (spread - week_ago["price"]) * 100
         if change_bps > REGIME_THRESHOLDS["hy_spread_widening_bps"]:
@@ -210,13 +211,13 @@ async def _eval_hy_spread(conn: aiosqlite.Connection) -> Signal:
     return Signal(name="hy_spread", direction="neutral", detail=f"HY spread neutral ({spread:.2f}%)")
 
 
-async def _eval_dxy(conn: aiosqlite.Connection) -> Signal:
+async def _eval_dxy(session: AsyncSession) -> Signal:
     """UUP spike detection (asymmetric — only flags risk-off).
 
     UUP is the Invesco DB US Dollar Index Bullish Fund — a sharp daily
     rise signals dollar strength, which is typically risk-off.
     """
-    latest = await _get_latest_snapshot(conn, "UUP")
+    latest = await _get_latest_snapshot(session, "UUP")
     if latest is None or latest.get("change_pct") is None:
         return Signal(name="dxy", direction="neutral", detail="UUP data unavailable")
 
@@ -230,14 +231,14 @@ async def _eval_dxy(conn: aiosqlite.Connection) -> Signal:
     return Signal(name="dxy", direction="neutral", detail=f"UUP stable ({change:+.1f}%)")
 
 
-async def _eval_gold_vs_equities(conn: aiosqlite.Connection) -> Signal:
+async def _eval_gold_vs_equities(session: AsyncSession) -> Signal:
     """Gold outperforming equities (asymmetric — only flags risk-off).
 
     Requires gold to be up more than ``gold_safe_haven_pct`` AND
     outperforming S&P to filter out noise on flat days.
     """
-    gold = await _get_latest_snapshot(conn, "GLD")
-    spx = await _get_latest_snapshot(conn, "SPY")
+    gold = await _get_latest_snapshot(session, "GLD")
+    spx = await _get_latest_snapshot(session, "SPY")
     if gold is None or spx is None:
         return Signal(name="gold_vs_equities", direction="neutral", detail="gold/equity data unavailable")
 
@@ -291,18 +292,18 @@ def _build_reason(signals: list[Signal]) -> str:
 # ---------------------------------------------------------------------------
 
 
-async def classify_regime(conn: aiosqlite.Connection) -> RegimeResult:
+async def classify_regime(session: AsyncSession) -> RegimeResult:
     """Classify the current market regime from latest snapshots.
 
     Evaluates five signals (S&P trend, VIXY, HY spread, UUP, gold vs
     equities), aggregates them, and returns a labelled result.
     """
     signals = [
-        await _eval_spx_trend(conn),
-        await _eval_vix(conn),
-        await _eval_hy_spread(conn),
-        await _eval_dxy(conn),
-        await _eval_gold_vs_equities(conn),
+        await _eval_spx_trend(session),
+        await _eval_vix(session),
+        await _eval_hy_spread(session),
+        await _eval_dxy(session),
+        await _eval_gold_vs_equities(session),
     ]
 
     label = _classify(signals)

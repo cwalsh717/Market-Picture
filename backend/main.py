@@ -12,9 +12,10 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from backend.config import ASSETS, FRED_SERIES, SYMBOL_ASSET_CLASS
-from backend.db import get_connection, init_db
+from backend.db import close_db, get_session, init_db
 from backend.jobs.daily_update import generate_close_summary, save_quotes
 from backend.jobs.scheduler import start_scheduler, stop_scheduler
 from backend.providers.fred import FredProvider
@@ -47,6 +48,7 @@ async def lifespan(app: FastAPI):
     stop_scheduler()
     await app.state.fred.close()
     await app.state.twelve_data.close()
+    await close_db()
     logger.info("Market Picture stopped")
 
 
@@ -72,22 +74,22 @@ async def health() -> dict:
 @app.get("/api/snapshot")
 async def snapshot() -> dict:
     """Return the most recent price snapshot for all assets, grouped by asset class."""
-    conn = await get_connection()
+    session = await get_session()
     try:
-        cursor = await conn.execute(
-            """
-            SELECT s.symbol, s.asset_class, s.price, s.change_pct,
-                   s.change_abs, s.timestamp
-            FROM market_snapshots s
-            INNER JOIN (
-                SELECT symbol, MAX(id) AS max_id
-                FROM market_snapshots GROUP BY symbol
-            ) latest ON s.id = latest.max_id
-            """
+        result = await session.execute(
+            text("""
+                SELECT s.symbol, s.asset_class, s.price, s.change_pct,
+                       s.change_abs, s.timestamp
+                FROM market_snapshots s
+                INNER JOIN (
+                    SELECT symbol, MAX(id) AS max_id
+                    FROM market_snapshots GROUP BY symbol
+                ) latest ON s.id = latest.max_id
+            """)
         )
-        rows = await cursor.fetchall()
+        rows = result.mappings().all()
     finally:
-        await conn.close()
+        await session.close()
 
     groups: dict[str, list[dict]] = {}
     last_updated = ""
@@ -135,14 +137,14 @@ async def history(symbol: str, period: str = "1W") -> dict:
 @app.get("/api/summary")
 async def summary() -> dict:
     """Return the latest market summary and regime data."""
-    conn = await get_connection()
+    session = await get_session()
     try:
-        cursor = await conn.execute(
-            "SELECT * FROM summaries ORDER BY date DESC, id DESC LIMIT 1"
+        result = await session.execute(
+            text("SELECT * FROM summaries ORDER BY date DESC, id DESC LIMIT 1")
         )
-        row = await cursor.fetchone()
+        row = result.mappings().first()
     finally:
-        await conn.close()
+        await session.close()
 
     if row is None:
         raise HTTPException(status_code=404, detail="No summaries available yet")

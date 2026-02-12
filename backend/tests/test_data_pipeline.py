@@ -16,11 +16,11 @@ from datetime import datetime
 from unittest.mock import AsyncMock, patch
 from zoneinfo import ZoneInfo
 
-import aiosqlite
 import pytest
+from sqlalchemy import text
 
 from backend.config import SYMBOL_ASSET_CLASS, SYMBOL_MARKET_MAP
-from backend.db import _migrate_summaries_table, init_db
+from backend.db import _migrate_summaries_table, close_db, get_session, init_db
 from backend.jobs.daily_update import (
     fetch_fred_quotes,
     fetch_twelve_data_quotes,
@@ -37,69 +37,38 @@ _ET = ZoneInfo("US/Eastern")
 # Fixtures
 # ---------------------------------------------------------------------------
 
-_ORIGINAL_DB_PATH = None
-
 
 @pytest.fixture(autouse=True)
-def _use_temp_db(tmp_path, monkeypatch):
-    """Point the database at a temporary file for every test."""
-    db_path = str(tmp_path / "test.db")
-    monkeypatch.setattr("backend.config.DATABASE_PATH", db_path)
-    monkeypatch.setattr("backend.db.DATABASE_PATH", db_path)
-    monkeypatch.setattr("backend.jobs.daily_update.get_connection", _make_get_conn(db_path))
-    asyncio.get_event_loop().run_until_complete(_init_temp_db(db_path))
+def _use_temp_db(tmp_path):
+    """Point the database at a temporary SQLite file for every test."""
+    db_url = f"sqlite+aiosqlite:///{tmp_path}/test.db"
+    asyncio.get_event_loop().run_until_complete(init_db(db_url))
+    yield
+    asyncio.get_event_loop().run_until_complete(close_db())
 
 
-def _make_get_conn(db_path: str):
-    async def get_connection():
-        conn = await aiosqlite.connect(db_path)
-        conn.row_factory = aiosqlite.Row
-        return conn
-    return get_connection
-
-
-async def _init_temp_db(db_path: str):
-    """Create tables in the temp database."""
-    async with aiosqlite.connect(db_path) as conn:
-        await conn.executescript("""
-            CREATE TABLE IF NOT EXISTS market_snapshots (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                symbol      TEXT    NOT NULL,
-                asset_class TEXT    NOT NULL,
-                price       REAL    NOT NULL,
-                change_pct  REAL,
-                change_abs  REAL,
-                timestamp   TEXT    NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS summaries (
-                id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-                date                 TEXT    NOT NULL,
-                period               TEXT    NOT NULL,
-                summary_text         TEXT,
-                regime_label         TEXT,
-                regime_reason        TEXT,
-                regime_signals_json  TEXT
-            );
-        """)
-        await conn.commit()
-
-
-async def _read_snapshots(db_path: str) -> list[dict]:
+async def _read_snapshots() -> list[dict]:
     """Read all rows from market_snapshots."""
-    async with aiosqlite.connect(db_path) as conn:
-        conn.row_factory = aiosqlite.Row
-        cursor = await conn.execute("SELECT * FROM market_snapshots ORDER BY id")
-        rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
+    session = await get_session()
+    try:
+        result = await session.execute(
+            text("SELECT * FROM market_snapshots ORDER BY id")
+        )
+        return [dict(r) for r in result.mappings().all()]
+    finally:
+        await session.close()
 
 
-async def _read_summaries(db_path: str) -> list[dict]:
+async def _read_summaries() -> list[dict]:
     """Read all rows from summaries."""
-    async with aiosqlite.connect(db_path) as conn:
-        conn.row_factory = aiosqlite.Row
-        cursor = await conn.execute("SELECT * FROM summaries ORDER BY id")
-        rows = await cursor.fetchall()
-        return [dict(r) for r in rows]
+    session = await get_session()
+    try:
+        result = await session.execute(
+            text("SELECT * FROM summaries ORDER BY id")
+        )
+        return [dict(r) for r in result.mappings().all()]
+    finally:
+        await session.close()
 
 
 # ---------------------------------------------------------------------------
@@ -217,8 +186,7 @@ class TestGetActiveSymbols:
 
 class TestSaveQuotes:
     @pytest.mark.asyncio
-    async def test_saves_single_quote(self, tmp_path):
-        db_path = str(tmp_path / "test.db")
+    async def test_saves_single_quote(self):
         quotes = {
             "SPY": {
                 "price": 5100.50,
@@ -230,7 +198,7 @@ class TestSaveQuotes:
         saved = await save_quotes(quotes)
         assert saved == 1
 
-        rows = await _read_snapshots(db_path)
+        rows = await _read_snapshots()
         assert len(rows) == 1
         assert rows[0]["symbol"] == "SPY"
         assert rows[0]["asset_class"] == "equities"
@@ -240,8 +208,7 @@ class TestSaveQuotes:
         assert rows[0]["timestamp"] == "2025-01-06 16:00:00"
 
     @pytest.mark.asyncio
-    async def test_saves_multiple_quotes(self, tmp_path):
-        db_path = str(tmp_path / "test.db")
+    async def test_saves_multiple_quotes(self):
         quotes = {
             "SPY": {"price": 5100.0, "change_pct": 0.5, "change_abs": 25.0, "timestamp": "t1"},
             "BTC/USD": {"price": 97000.0, "change_pct": 2.1, "change_abs": 2000.0, "timestamp": "t1"},
@@ -250,7 +217,7 @@ class TestSaveQuotes:
         saved = await save_quotes(quotes)
         assert saved == 3
 
-        rows = await _read_snapshots(db_path)
+        rows = await _read_snapshots()
         symbols = {r["symbol"] for r in rows}
         assert symbols == {"SPY", "BTC/USD", "DGS10"}
 
@@ -261,8 +228,7 @@ class TestSaveQuotes:
         assert asset_classes["DGS10"] == "rates"
 
     @pytest.mark.asyncio
-    async def test_skips_quotes_without_price(self, tmp_path):
-        db_path = str(tmp_path / "test.db")
+    async def test_skips_quotes_without_price(self):
         quotes = {
             "SPY": {"change_pct": 0.5, "timestamp": "t1"},  # no price
             "QQQ": {"price": 18000.0, "change_pct": 0.3, "change_abs": 50.0, "timestamp": "t1"},
@@ -270,7 +236,7 @@ class TestSaveQuotes:
         saved = await save_quotes(quotes)
         assert saved == 1
 
-        rows = await _read_snapshots(db_path)
+        rows = await _read_snapshots()
         assert len(rows) == 1
         assert rows[0]["symbol"] == "QQQ"
 
@@ -280,13 +246,12 @@ class TestSaveQuotes:
         assert saved == 0
 
     @pytest.mark.asyncio
-    async def test_unknown_symbol_gets_unknown_asset_class(self, tmp_path):
-        db_path = str(tmp_path / "test.db")
+    async def test_unknown_symbol_gets_unknown_asset_class(self):
         quotes = {"FAKE": {"price": 1.0, "timestamp": "t1"}}
         saved = await save_quotes(quotes)
         assert saved == 1
 
-        rows = await _read_snapshots(db_path)
+        rows = await _read_snapshots()
         assert rows[0]["asset_class"] == "unknown"
 
 
@@ -297,9 +262,7 @@ class TestSaveQuotes:
 
 class TestFetchTwelveDataQuotes:
     @pytest.mark.asyncio
-    async def test_fetches_and_saves_during_us_hours(self, tmp_path, monkeypatch):
-        db_path = str(tmp_path / "test.db")
-
+    async def test_fetches_and_saves_during_us_hours(self, monkeypatch):
         mock_provider = AsyncMock()
         mock_provider.get_quotes_for_symbols.return_value = {
             "SPY": {"price": 5100.0, "change_pct": 0.5, "change_abs": 25.0, "timestamp": "t1"},
@@ -322,16 +285,14 @@ class TestFetchTwelveDataQuotes:
         assert "BTC/USD" in called_symbols
 
         # Verify data landed in DB
-        rows = await _read_snapshots(db_path)
+        rows = await _read_snapshots()
         assert len(rows) == 2
         symbols = {r["symbol"] for r in rows}
         assert symbols == {"SPY", "BTC/USD"}
 
     @pytest.mark.asyncio
-    async def test_skips_when_no_markets_open(self, tmp_path, monkeypatch):
+    async def test_skips_when_no_markets_open(self, monkeypatch):
         """At 17:00 ET only crypto is open — but if provider returns empty, nothing saved."""
-        db_path = str(tmp_path / "test.db")
-
         mock_provider = AsyncMock()
         mock_provider.get_quotes_for_symbols.return_value = {}
 
@@ -343,7 +304,7 @@ class TestFetchTwelveDataQuotes:
 
         await fetch_twelve_data_quotes(provider=mock_provider)
 
-        rows = await _read_snapshots(db_path)
+        rows = await _read_snapshots()
         assert len(rows) == 0
 
 
@@ -354,9 +315,7 @@ class TestFetchTwelveDataQuotes:
 
 class TestFetchFredQuotes:
     @pytest.mark.asyncio
-    async def test_fetches_and_saves_all_fred(self, tmp_path):
-        db_path = str(tmp_path / "test.db")
-
+    async def test_fetches_and_saves_all_fred(self):
         mock_provider = AsyncMock()
         mock_provider.get_all_quotes.return_value = {
             "DGS2": {"price": 4.15, "change_pct": 0.1, "change_abs": 0.004, "timestamp": "2025-01-06"},
@@ -368,7 +327,7 @@ class TestFetchFredQuotes:
 
         await fetch_fred_quotes(provider=mock_provider)
 
-        rows = await _read_snapshots(db_path)
+        rows = await _read_snapshots()
         assert len(rows) == 5
 
         symbols = {r["symbol"] for r in rows}
@@ -379,15 +338,13 @@ class TestFetchFredQuotes:
             assert row["asset_class"] == "rates", f"{row['symbol']} should be rates"
 
     @pytest.mark.asyncio
-    async def test_handles_empty_fred_response(self, tmp_path):
-        db_path = str(tmp_path / "test.db")
-
+    async def test_handles_empty_fred_response(self):
         mock_provider = AsyncMock()
         mock_provider.get_all_quotes.return_value = {}
 
         await fetch_fred_quotes(provider=mock_provider)
 
-        rows = await _read_snapshots(db_path)
+        rows = await _read_snapshots()
         assert len(rows) == 0
 
 
@@ -476,8 +433,7 @@ class TestSummaryPersistence:
     columns correctly."""
 
     @pytest.mark.asyncio
-    async def test_premarket_persists_all_columns(self, tmp_path, monkeypatch):
-        db_path = str(tmp_path / "test.db")
+    async def test_premarket_persists_all_columns(self, monkeypatch):
         fixed_time = datetime(2025, 1, 6, 8, 0, tzinfo=_ET)
         monkeypatch.setattr(
             "backend.jobs.daily_update.datetime",
@@ -494,7 +450,7 @@ class TestSummaryPersistence:
 
             await generate_premarket_summary()
 
-        rows = await _read_summaries(db_path)
+        rows = await _read_summaries()
         assert len(rows) == 1
         row = rows[0]
 
@@ -510,8 +466,7 @@ class TestSummaryPersistence:
         assert signals[0]["name"] == "spx_trend"
 
     @pytest.mark.asyncio
-    async def test_close_persists_all_columns(self, tmp_path, monkeypatch):
-        db_path = str(tmp_path / "test.db")
+    async def test_close_persists_all_columns(self, monkeypatch):
         fixed_time = datetime(2025, 1, 6, 16, 30, tzinfo=_ET)
         monkeypatch.setattr(
             "backend.jobs.daily_update.datetime",
@@ -528,7 +483,7 @@ class TestSummaryPersistence:
 
             await generate_close_summary()
 
-        rows = await _read_summaries(db_path)
+        rows = await _read_summaries()
         assert len(rows) == 1
         row = rows[0]
 
@@ -545,62 +500,39 @@ class TestSummaryPersistence:
 
 
 class TestSummariesMigration:
-    """Verify _migrate_summaries_table adds missing columns and is idempotent."""
+    """Verify _migrate_summaries_table handles missing columns gracefully."""
 
     @pytest.mark.asyncio
-    async def test_adds_columns_to_old_schema(self, tmp_path):
-        """Starting from a schema without the new columns, migration adds them."""
-        db_path = str(tmp_path / "migrate.db")
-        async with aiosqlite.connect(db_path) as conn:
-            await conn.execute("""
-                CREATE TABLE summaries (
-                    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-                    date                 TEXT    NOT NULL,
-                    period               TEXT    NOT NULL,
-                    summary_text         TEXT,
-                    regime_label         TEXT,
-                    regime_reason        TEXT
-                )
-            """)
-            await _migrate_summaries_table(conn)
-            await conn.commit()
+    async def test_migration_is_idempotent(self):
+        """Running migration on a DB that already has all columns doesn't fail."""
+        session = await get_session()
+        try:
+            await _migrate_summaries_table(session)
+            await _migrate_summaries_table(session)  # second call should not fail
 
-            # Verify new column exists by inserting a row that uses it
-            await conn.execute(
-                """
-                INSERT INTO summaries
-                    (date, period, summary_text, regime_label, regime_reason,
-                     regime_signals_json)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                ("2025-01-06", "premarket", "test", "RISK-ON", "test",
-                 '[]'),
+            # Verify we can still insert and read
+            await session.execute(
+                text("""
+                    INSERT INTO summaries
+                        (date, period, summary_text, regime_label, regime_reason,
+                         regime_signals_json)
+                    VALUES (:date, :period, :text, :label, :reason, :signals)
+                """),
+                {
+                    "date": "2025-01-06",
+                    "period": "premarket",
+                    "text": "test",
+                    "label": "RISK-ON",
+                    "reason": "test",
+                    "signals": "[]",
+                },
             )
-            await conn.commit()
+            await session.commit()
 
-            cursor = await conn.execute("SELECT regime_signals_json FROM summaries")
-            row = await cursor.fetchone()
-            assert row[0] == "[]"
-
-    @pytest.mark.asyncio
-    async def test_migration_is_idempotent(self, tmp_path):
-        """Running migration twice on the same DB doesn't fail."""
-        db_path = str(tmp_path / "migrate2.db")
-        async with aiosqlite.connect(db_path) as conn:
-            await conn.execute("""
-                CREATE TABLE summaries (
-                    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
-                    date                 TEXT    NOT NULL,
-                    period               TEXT    NOT NULL,
-                    summary_text         TEXT,
-                    regime_label         TEXT,
-                    regime_reason        TEXT
-                )
-            """)
-            await _migrate_summaries_table(conn)
-            await _migrate_summaries_table(conn)  # second call should not fail
-            await conn.commit()
-
-            cursor = await conn.execute("PRAGMA table_info(summaries)")
-            cols = {row[1] for row in await cursor.fetchall()}
-            assert "regime_signals_json" in cols
+            result = await session.execute(
+                text("SELECT regime_signals_json FROM summaries")
+            )
+            row = result.mappings().first()
+            assert row["regime_signals_json"] == "[]"
+        finally:
+            await session.close()

@@ -6,8 +6,10 @@ import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import text
+
 from backend.config import MARKET_HOURS, SYMBOL_ASSET_CLASS, SYMBOL_MARKET_MAP
-from backend.db import get_connection
+from backend.db import get_session
 from backend.providers.fred import FredProvider
 from backend.providers.twelve_data import TwelveDataProvider
 
@@ -69,14 +71,14 @@ async def save_quotes(quotes: dict[str, dict]) -> int:
         return 0
 
     rows = [
-        (
-            symbol,
-            SYMBOL_ASSET_CLASS.get(symbol, "unknown"),
-            data["price"],
-            data.get("change_pct"),
-            data.get("change_abs"),
-            data.get("timestamp", ""),
-        )
+        {
+            "symbol": symbol,
+            "asset_class": SYMBOL_ASSET_CLASS.get(symbol, "unknown"),
+            "price": data["price"],
+            "change_pct": data.get("change_pct"),
+            "change_abs": data.get("change_abs"),
+            "timestamp": data.get("timestamp", ""),
+        }
         for symbol, data in quotes.items()
         if "price" in data
     ]
@@ -84,23 +86,24 @@ async def save_quotes(quotes: dict[str, dict]) -> int:
     if not rows:
         return 0
 
-    conn = await get_connection()
+    session = await get_session()
     try:
-        await conn.executemany(
-            """
-            INSERT INTO market_snapshots
-                (symbol, asset_class, price, change_pct, change_abs, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
+        await session.execute(
+            text("""
+                INSERT INTO market_snapshots
+                    (symbol, asset_class, price, change_pct, change_abs, timestamp)
+                VALUES (:symbol, :asset_class, :price, :change_pct, :change_abs, :timestamp)
+            """),
             rows,
         )
-        await conn.commit()
+        await session.commit()
         return len(rows)
     except Exception:
         logger.exception("Failed to save %d quotes to database", len(rows))
+        await session.rollback()
         return 0
     finally:
-        await conn.close()
+        await session.close()
 
 
 # ---------------------------------------------------------------------------
@@ -177,36 +180,38 @@ async def generate_premarket_summary() -> None:
 
     logger.info("Pre-market summary job triggered")
 
-    conn = await get_connection()
+    session = await get_session()
     try:
-        regime = await classify_regime(conn)
+        regime = await classify_regime(session)
 
         summary = await generate_premarket(regime)
         logger.info("Pre-market regime: %s | %s", regime["label"], regime["reason"])
 
         today = datetime.now(_ET).date().isoformat()
 
-        await conn.execute(
-            """
-            INSERT INTO summaries
-                (date, period, summary_text, regime_label, regime_reason,
-                 regime_signals_json)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                today,
-                "premarket",
-                summary["summary_text"],
-                regime["label"],
-                regime["reason"],
-                json.dumps(regime["signals"]),
-            ),
+        await session.execute(
+            text("""
+                INSERT INTO summaries
+                    (date, period, summary_text, regime_label, regime_reason,
+                     regime_signals_json)
+                VALUES (:date, :period, :summary_text, :regime_label, :regime_reason,
+                        :regime_signals_json)
+            """),
+            {
+                "date": today,
+                "period": "premarket",
+                "summary_text": summary["summary_text"],
+                "regime_label": regime["label"],
+                "regime_reason": regime["reason"],
+                "regime_signals_json": json.dumps(regime["signals"]),
+            },
         )
-        await conn.commit()
+        await session.commit()
     except Exception:
         logger.exception("Failed to generate premarket summary")
+        await session.rollback()
     finally:
-        await conn.close()
+        await session.close()
 
 
 async def generate_close_summary() -> None:
@@ -222,33 +227,35 @@ async def generate_close_summary() -> None:
 
     logger.info("After-close summary job triggered")
 
-    conn = await get_connection()
+    session = await get_session()
     try:
-        regime = await classify_regime(conn)
+        regime = await classify_regime(session)
         logger.info("Regime: %s | %s", regime["label"], regime["reason"])
 
         summary = await generate_close(regime)
 
         today = datetime.now(_ET).date().isoformat()
 
-        await conn.execute(
-            """
-            INSERT INTO summaries
-                (date, period, summary_text, regime_label, regime_reason,
-                 regime_signals_json)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                today,
-                "close",
-                summary["summary_text"],
-                regime["label"],
-                regime["reason"],
-                json.dumps(regime["signals"]),
-            ),
+        await session.execute(
+            text("""
+                INSERT INTO summaries
+                    (date, period, summary_text, regime_label, regime_reason,
+                     regime_signals_json)
+                VALUES (:date, :period, :summary_text, :regime_label, :regime_reason,
+                        :regime_signals_json)
+            """),
+            {
+                "date": today,
+                "period": "close",
+                "summary_text": summary["summary_text"],
+                "regime_label": regime["label"],
+                "regime_reason": regime["reason"],
+                "regime_signals_json": json.dumps(regime["signals"]),
+            },
         )
-        await conn.commit()
+        await session.commit()
     except Exception:
         logger.exception("Failed to generate close summary")
+        await session.rollback()
     finally:
-        await conn.close()
+        await session.close()

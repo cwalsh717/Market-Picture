@@ -15,6 +15,7 @@ ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
+DATABASE_URL: str = os.getenv("DATABASE_URL", "")
 DATABASE_PATH: str = os.getenv("DATABASE_PATH", "market_picture.db")
 
 # ---------------------------------------------------------------------------
