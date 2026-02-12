@@ -41,7 +41,6 @@ REGIME_THRESHOLDS: dict[str, float] = {
     "spx_ma_period": 20,           # Number of trading days for S&P 500 MA
     "yield_curve_inverted": 0.0,   # 2s10s below this → inverted
     "gold_safe_haven_pct": 1.5,    # Gold up >1.5% on a risk-off day → flight to safety
-    "correlation_threshold": 0.7,  # Minimum r for "moving together" grouping
 }
 
 # ---------------------------------------------------------------------------
@@ -135,51 +134,6 @@ for _series_id in FRED_SERIES:
 SYMBOL_ASSET_CLASS["SPREAD_2S10S"] = "rates"
 
 # ---------------------------------------------------------------------------
-# Correlation detection
-# ---------------------------------------------------------------------------
-CORRELATION_CONFIG: dict[str, float] = {
-    "min_data_points": 5,          # Minimum daily observations for Pearson r
-    "anomaly_deviation_threshold": 0.4,  # |actual − expected| to flag anomaly
-    "comovement_magnitude_band": 1.5,    # Pct-point band for 1D grouping
-    "comovement_min_change_pct": 0.3,    # Filter flat assets in 1D mode
-    "diverging_baseline_threshold": 0.5,  # Pairs with baseline r above this are "normally correlated"
-}
-
-# Expected baseline correlations (long-run approximations).
-# Keys are (symbol_a, symbol_b) sorted alphabetically.
-BASELINE_CORRELATIONS: dict[tuple[str, str], float] = {
-    # Traditionally high positive (equity indices)
-    ("QQQ", "SPY"): 0.90,
-    ("IWM", "SPY"): 0.85,
-    ("IWM", "QQQ"): 0.80,
-    ("FEZ", "UKX"): 0.85,
-    # Traditionally negative
-    ("SPY", "VIXY"): -0.80,
-    # Normally uncorrelated (crypto vs traditional)
-    ("BTC/USD", "QQQ"): 0.15,
-    ("BTC/USD", "IWM"): 0.10,
-    ("BTC/USD", "SPY"): 0.10,
-    ("ETH/USD", "SPY"): 0.10,
-    # Scarcity-risk (critical minerals vs broad risk)
-    ("LIT", "QQQ"): 0.45,
-    ("LIT", "SPY"): 0.50,
-    ("QQQ", "REMX"): 0.40,
-    ("QQQ", "URA"): 0.35,
-    ("REMX", "SPY"): 0.45,
-    ("SPY", "URA"): 0.40,
-    # Scarcity internal
-    ("LIT", "REMX"): 0.65,
-    ("LIT", "URA"): 0.55,
-    ("REMX", "URA"): 0.60,
-    # Cross-asset
-    ("DGS10", "SPY"): 0.15,
-    ("SPY", "UUP"): -0.20,
-    ("SPY", "USO"): 0.35,
-    ("GLD", "SPY"): -0.10,
-    ("CPER", "SPY"): 0.50,
-}
-
-# ---------------------------------------------------------------------------
 # LLM summary settings
 # ---------------------------------------------------------------------------
 SUMMARY_CONFIG: dict[str, object] = {
@@ -199,25 +153,16 @@ SUMMARY_SYSTEM_PROMPT: str = (
 
 PREMARKET_USER_TEMPLATE: str = (
     "Write a pre-market briefing for {date}.\n\n"
-    "Overnight & international moves:\n{overnight_data}\n\n"
-    "Crypto (24/7):\n{crypto_data}\n\n"
     "Current regime: {regime_label} — {regime_reason}\n\n"
-    "Co-movement groups:\n{comovement_summary}\n\n"
-    "Diverging (normally correlated, moving opposite today):\n{diverging_1d}\n\n"
-    "Anomalies:\n{anomalies_summary}\n\n"
-    "Cover: (1) overnight international moves, (2) crypto, "
-    "(3) what regime and correlations suggest to watch today."
+    "Signals:\n{regime_signals}\n\n"
+    "Cover: (1) the regime and what's driving it, "
+    "(2) what to watch today."
 )
 
 CLOSE_USER_TEMPLATE: str = (
     "Write an after-close market summary for {date}.\n\n"
     "Regime: {regime_label} — {regime_reason}\n"
     "Signals:\n{regime_signals}\n\n"
-    "Today's co-movement (1D):\n{comovement_1d}\n\n"
-    "Diverging (normally correlated, moving opposite today):\n{diverging_1d}\n\n"
-    "Monthly co-movement (1M):\n{comovement_1m}\n\n"
-    "Anomalies:\n{anomalies_1d}\n{anomalies_1m}\n\n"
-    "Scarcity vs abundance:\n{scarcity_summary}\n\n"
-    "Cover: (1) regime and what drove it, (2) what moved together/diverged, "
-    "(3) scarcity theme, (4) what this means for someone watching markets."
+    "Cover: (1) regime and what drove it, "
+    "(2) what this means for someone watching markets."
 )

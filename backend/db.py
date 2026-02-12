@@ -34,9 +34,7 @@ CREATE TABLE IF NOT EXISTS summaries (
     summary_text         TEXT,
     regime_label         TEXT,
     regime_reason        TEXT,
-    regime_signals_json  TEXT,
-    moving_together_json TEXT,
-    correlations_json    TEXT
+    regime_signals_json  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS search_cache (
@@ -60,11 +58,10 @@ async def _migrate_summaries_table(conn: aiosqlite.Connection) -> None:
     cursor = await conn.execute("PRAGMA table_info(summaries)")
     existing = {row[1] for row in await cursor.fetchall()}
 
-    for col in ("regime_signals_json", "correlations_json"):
-        if col not in existing:
-            await conn.execute(
-                f"ALTER TABLE summaries ADD COLUMN {col} TEXT"
-            )
+    if "regime_signals_json" not in existing:
+        await conn.execute(
+            "ALTER TABLE summaries ADD COLUMN regime_signals_json TEXT"
+        )
 
 
 async def init_db() -> None:

@@ -134,7 +134,7 @@ async def history(symbol: str, period: str = "1W") -> dict:
 
 @app.get("/api/summary")
 async def summary() -> dict:
-    """Return the latest market summary, regime, and correlation data."""
+    """Return the latest market summary and regime data."""
     conn = await get_connection()
     try:
         cursor = await conn.execute(
@@ -164,8 +164,6 @@ async def summary() -> dict:
             "reason": row["regime_reason"],
             "signals": _parse_json(row["regime_signals_json"]),
         },
-        "moving_together": _parse_json(row["moving_together_json"]),
-        "correlations": _parse_json(row["correlations_json"]),
     }
 
 
@@ -206,7 +204,7 @@ async def fetch_now() -> dict:
     results["fred"] = {"fetched": len(fred_quotes), "saved": fred_saved}
     logger.info("fetch-now: FRED — %d fetched, %d saved", len(fred_quotes), fred_saved)
 
-    # 3. Run intelligence pipeline (regime + correlations + LLM summary)
+    # 3. Run intelligence pipeline (regime + LLM summary)
     try:
         await generate_close_summary()
         results["summary"] = "ok"

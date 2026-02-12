@@ -167,12 +167,11 @@ async def fetch_fred_quotes(provider: FredProvider) -> None:
 async def generate_premarket_summary() -> None:
     """Generate the pre-market LLM summary (~8:00 AM ET).
 
-    Computes regime classification and overnight correlations, generates
-    a narrative via the Claude API, and persists to the summaries table.
+    Computes regime classification, generates a narrative via the Claude API,
+    and persists to the summaries table.
     """
     import json
 
-    from backend.intelligence.correlations import detect_correlations
     from backend.intelligence.regime import classify_regime
     from backend.intelligence.summary import generate_premarket
 
@@ -181,9 +180,8 @@ async def generate_premarket_summary() -> None:
     conn = await get_connection()
     try:
         regime = await classify_regime(conn)
-        corr_1d = await detect_correlations(conn, period="1D")
 
-        summary = await generate_premarket(regime, corr_1d)
+        summary = await generate_premarket(regime)
         logger.info("Pre-market regime: %s | %s", regime["label"], regime["reason"])
 
         today = datetime.now(_ET).date().isoformat()
@@ -192,8 +190,8 @@ async def generate_premarket_summary() -> None:
             """
             INSERT INTO summaries
                 (date, period, summary_text, regime_label, regime_reason,
-                 regime_signals_json, moving_together_json, correlations_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 regime_signals_json)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 today,
@@ -202,8 +200,6 @@ async def generate_premarket_summary() -> None:
                 regime["label"],
                 regime["reason"],
                 json.dumps(regime["signals"]),
-                json.dumps(summary["moving_together"]),
-                json.dumps({"1D": corr_1d}),
             ),
         )
         await conn.commit()
@@ -216,12 +212,11 @@ async def generate_premarket_summary() -> None:
 async def generate_close_summary() -> None:
     """Generate the after-close LLM summary (~4:30 PM ET).
 
-    Computes regime classification and cross-asset correlations, generates
-    a narrative via the Claude API, and persists to the summaries table.
+    Computes regime classification, generates a narrative via the Claude API,
+    and persists to the summaries table.
     """
     import json
 
-    from backend.intelligence.correlations import detect_correlations
     from backend.intelligence.regime import classify_regime
     from backend.intelligence.summary import generate_close
 
@@ -232,18 +227,7 @@ async def generate_close_summary() -> None:
         regime = await classify_regime(conn)
         logger.info("Regime: %s | %s", regime["label"], regime["reason"])
 
-        corr_1d = await detect_correlations(conn, period="1D")
-        corr_1m = await detect_correlations(conn, period="1M")
-        logger.info(
-            "Correlations: %d groups, %d anomalies (1D); "
-            "%d groups, %d anomalies (1M)",
-            len(corr_1d["groups"]),
-            len(corr_1d["anomalies"]),
-            len(corr_1m["groups"]),
-            len(corr_1m["anomalies"]),
-        )
-
-        summary = await generate_close(regime, corr_1d, corr_1m)
+        summary = await generate_close(regime)
 
         today = datetime.now(_ET).date().isoformat()
 
@@ -251,8 +235,8 @@ async def generate_close_summary() -> None:
             """
             INSERT INTO summaries
                 (date, period, summary_text, regime_label, regime_reason,
-                 regime_signals_json, moving_together_json, correlations_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 regime_signals_json)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 today,
@@ -261,8 +245,6 @@ async def generate_close_summary() -> None:
                 regime["label"],
                 regime["reason"],
                 json.dumps(regime["signals"]),
-                json.dumps(summary["moving_together"]),
-                json.dumps({"1D": corr_1d, "1M": corr_1m}),
             ),
         )
         await conn.commit()
