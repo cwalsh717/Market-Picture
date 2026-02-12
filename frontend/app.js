@@ -212,7 +212,7 @@ function renderAssetCard(asset) {
       <div class="flex items-start justify-between gap-2 mb-1">
         <div class="min-w-0">
           <div class="flex items-center gap-1.5">
-            <span class="text-sm font-semibold text-gray-100 truncate">${escapeHtml(asset.name)}</span>
+            <span class="text-sm font-semibold text-gray-100">${escapeHtml(asset.name)}</span>
             ${explainer ? `<button class="info-btn" data-symbol="${escapeAttr(asset.symbol)}" title="What is this?">&#9432;</button>` : ""}
           </div>
           <span class="text-xs text-gray-500">${escapeHtml(asset.symbol)}</span>
