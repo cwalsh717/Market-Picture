@@ -88,9 +88,9 @@
   padding-top: 0.625rem;
 }
 
-/* Search result card (not expandable) */
+/* Search result card — clickable to open chart */
 #search-result {
-  cursor: default;
+  cursor: pointer;
 }
 
 /* Mobile responsive */
@@ -110,4 +110,104 @@
   margin-top: 0.75rem;
   border-top: 1px solid #374151;
   padding-top: 0.75rem;
+}
+
+/* ── Chart page ───────────────────────────────────────────────────────── */
+
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #374151;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.toggle-btn {
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  border: 1px solid #374151;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.toggle-btn:hover {
+  border-color: #6b7280;
+  color: #e5e7eb;
+}
+
+.toggle-btn.active {
+  background: #1f2937;
+  border-color: #6b7280;
+  color: #f3f4f6;
+}
+
+.crosshair-ohlc {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  font-size: 0.8125rem;
+  color: #d1d5db;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  min-height: 1.5rem;
+  align-items: center;
+}
+
+.chart-box {
+  border: 1px solid #374151;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+#chart-container {
+  height: 500px;
+}
+
+.rsi-box {
+  margin-top: 0.5rem;
+  height: 150px;
+}
+
+.price-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  padding: 1rem 0;
+  border-top: 1px solid #374151;
+}
+
+.price-stats .stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.price-stats .stat-label {
+  font-size: 0.6875rem;
+  color: #6b7280;
+  text-transform: uppercase;
+}
+
+.price-stats .stat-value {
+  font-size: 0.875rem;
+  color: #e5e7eb;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+}
+
+@media (max-width: 640px) {
+  #chart-container {
+    height: 350px;
+  }
+  .rsi-box {
+    height: 120px;
+  }
+  .chart-controls {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
 }

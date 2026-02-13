@@ -510,7 +510,7 @@ function initExpandedCharts() {
     const chartContainer = card.querySelector(".expanded-chart");
     if (!chartContainer) return;
     const symbol = chartContainer.dataset.symbol;
-    toggleExpandedChart(card, symbol);
+    window.location.href = `/chart.html?symbol=${encodeURIComponent(symbol)}`;
   });
 }
 
@@ -580,6 +580,12 @@ function renderSearchResult(data) {
 
   document.getElementById("search-timestamp").textContent = `Last updated: ${data.timestamp}`;
   resultEl.classList.remove("hidden");
+
+  // Click to open chart page
+  resultEl.style.cursor = "pointer";
+  resultEl.onclick = () => {
+    window.location.href = `/chart.html?symbol=${encodeURIComponent(data.symbol)}`;
+  };
 }
 
 function clearSearchResult() {

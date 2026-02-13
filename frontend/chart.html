@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chart — Market Picture</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <div class="max-w-6xl mx-auto px-4 py-6">
+
+    <!-- Header -->
+    <header class="flex items-center justify-between flex-wrap gap-2 mb-6">
+      <div class="flex items-center gap-3">
+        <a href="/" class="text-sm text-gray-400 hover:text-gray-200 transition-colors">&larr; Market Picture</a>
+        <h1 id="chart-title" class="text-xl font-bold"></h1>
+      </div>
+      <div id="chart-price" class="text-right">
+        <span id="current-price" class="text-lg font-medium"></span>
+        <span id="current-change" class="text-sm font-medium ml-2"></span>
+      </div>
+    </header>
+
+    <!-- Controls bar -->
+    <div class="chart-controls mb-4">
+      <div class="flex flex-wrap gap-1.5" id="range-buttons"></div>
+      <div class="flex flex-wrap gap-1.5 items-center" id="toggle-buttons"></div>
+    </div>
+
+    <!-- Crosshair OHLC bar -->
+    <div id="crosshair-ohlc" class="crosshair-ohlc mb-2">
+      <span id="ohlc-date"></span>
+      <span>O <span id="ohlc-o">&mdash;</span></span>
+      <span>H <span id="ohlc-h">&mdash;</span></span>
+      <span>L <span id="ohlc-l">&mdash;</span></span>
+      <span>C <span id="ohlc-c">&mdash;</span></span>
+      <span>Vol <span id="ohlc-v">&mdash;</span></span>
+    </div>
+
+    <!-- Main chart -->
+    <div id="chart-container" class="chart-box"></div>
+
+    <!-- RSI chart (hidden until toggled) -->
+    <div id="rsi-container" class="chart-box rsi-box hidden"></div>
+
+    <!-- Price stats -->
+    <div id="price-stats" class="price-stats mt-4"></div>
+
+    <!-- Loading skeleton -->
+    <div id="chart-loading" class="py-4">
+      <div class="skeleton h-[500px] rounded-lg"></div>
+    </div>
+
+    <!-- Error state -->
+    <div id="chart-error" class="hidden text-center py-20">
+      <p class="text-gray-400 text-lg" id="chart-error-message"></p>
+      <a href="/" class="text-sm text-gray-500 hover:text-gray-300 mt-4 inline-block">&larr; Back to dashboard</a>
+    </div>
+
+  </div>
+
+  <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="chart.js"></script>
+</body>
+</html>
