@@ -73,20 +73,32 @@ def _compute_change(observations: list[dict]) -> tuple[float, float]:
 
 
 def _observation_start_date(period: str) -> str:
-    """Map a period string to a YYYY-MM-DD start date for the FRED query.
+    """Map a period/range string to a YYYY-MM-DD start date for the FRED query.
 
-    Supported periods: ``'1D'``, ``'1W'``, ``'1M'``, ``'YTD'``.
+    Supported values: ``'1D'``, ``'5D'``, ``'1W'``, ``'1M'``, ``'3M'``,
+    ``'6M'``, ``'1Y'``, ``'YTD'``, ``'5Y'``, ``'Max'``.
     """
     today = datetime.now(timezone.utc).date()
 
-    if period == "1D":
-        return today.isoformat()
-    if period == "1W":
-        return (today - timedelta(days=7)).isoformat()
-    if period == "1M":
-        return (today - timedelta(days=30)).isoformat()
+    _PERIOD_DAYS: dict[str, int] = {
+        "1D": 1,
+        "5D": 7,
+        "1W": 7,
+        "1M": 30,
+        "3M": 90,
+        "6M": 180,
+        "1Y": 365,
+        "5Y": 1825,
+    }
+
     if period == "YTD":
         return f"{today.year}-01-01"
+    if period == "Max":
+        return "1900-01-01"
+
+    days = _PERIOD_DAYS.get(period)
+    if days is not None:
+        return (today - timedelta(days=days)).isoformat()
 
     raise ValueError(f"Unknown period: {period!r}")
 

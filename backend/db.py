@@ -162,6 +162,13 @@ async def get_session() -> AsyncSession:
     return _session_factory()
 
 
+def get_dialect() -> str:
+    """Return the dialect name of the current engine (e.g. 'sqlite', 'postgresql')."""
+    if _engine is None:
+        return "sqlite"
+    return _engine.dialect.name
+
+
 async def close_db() -> None:
     """Dispose of the engine and reset module state."""
     global _engine, _session_factory

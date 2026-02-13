@@ -207,6 +207,36 @@ class TwelveDataProvider(DataProvider):
             logger.error("get_history(%s, %s) failed: %s", symbol, period, exc)
             return []
 
+    async def get_full_history(self, symbol: str) -> list[dict]:
+        """Fetch maximum daily history (~20 years) for a symbol.
+
+        Uses outputsize=5000 for up to 5000 daily bars.
+        """
+        try:
+            raw = await self._request(
+                "/time_series",
+                {"symbol": symbol, "interval": "1day", "outputsize": 5000},
+            )
+            return _parse_time_series(raw)
+        except (httpx.HTTPError, TwelveDataError, KeyError, ValueError) as exc:
+            logger.error("get_full_history(%s) failed: %s", symbol, exc)
+            return []
+
+    async def get_history_since(self, symbol: str, start_date: str) -> list[dict]:
+        """Fetch daily bars from *start_date* (YYYY-MM-DD) to now.
+
+        Used for incremental cache updates.
+        """
+        try:
+            raw = await self._request(
+                "/time_series",
+                {"symbol": symbol, "interval": "1day", "start_date": start_date},
+            )
+            return _parse_time_series(raw)
+        except (httpx.HTTPError, TwelveDataError, KeyError, ValueError) as exc:
+            logger.error("get_history_since(%s, %s) failed: %s", symbol, start_date, exc)
+            return []
+
     async def search(self, query: str) -> list[dict]:
         """Search for instruments matching a query string."""
         try:

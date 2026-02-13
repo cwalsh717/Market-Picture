@@ -12,6 +12,7 @@ from backend.jobs.daily_update import (
     generate_close_summary,
     generate_premarket_summary,
 )
+from backend.services.history_cache import daily_append_all
 from backend.providers.fred import FredProvider
 from backend.providers.twelve_data import TwelveDataProvider
 
@@ -79,6 +80,20 @@ def create_scheduler(
         name="Generate after-close LLM summary",
         replace_existing=True,
         max_instances=1,
+    )
+
+    # -- Daily history cache update: 4:45 PM ET ----------------------------
+    scheduler.add_job(
+        daily_append_all,
+        trigger="cron",
+        hour=16,
+        minute=45,
+        id="daily_history_append",
+        name="Append latest bar for all cached symbols",
+        kwargs={"provider": twelve_data},
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
     )
 
     return scheduler

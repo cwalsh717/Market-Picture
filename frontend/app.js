@@ -98,9 +98,9 @@ async function fetchSnapshot() {
   return resp.json();
 }
 
-async function fetchHistory(symbol, period) {
+async function fetchHistory(symbol, range) {
   const resp = await fetch(
-    `${API_BASE}/api/history/${encodeURIComponent(symbol)}?period=${period}`
+    `${API_BASE}/api/history/${encodeURIComponent(symbol)}?range=${range}`
   );
   if (!resp.ok) throw new Error(`History error: ${resp.status}`);
   return resp.json();

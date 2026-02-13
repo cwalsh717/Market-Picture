@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -22,6 +23,11 @@ from backend.jobs.daily_update import generate_close_summary, save_quotes
 from backend.jobs.scheduler import start_scheduler, stop_scheduler
 from backend.providers.fred import FredProvider
 from backend.providers.twelve_data import TwelveDataProvider
+from backend.services.history_cache import (
+    VALID_RANGES,
+    backfill_symbols,
+    get_or_fetch_history,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +37,6 @@ for _symbols in ASSETS.values():
     _SYMBOL_NAMES.update(_symbols)
 _SYMBOL_NAMES.update(FRED_SERIES)
 _SYMBOL_NAMES["SPREAD_2S10S"] = "2s10s Yield Spread"
-
-_VALID_PERIODS = {"1D", "1W", "1M", "YTD"}
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -45,13 +48,40 @@ async def lifespan(app: FastAPI):
         twelve_data=app.state.twelve_data,
         fred=app.state.fred,
     )
+
+    # Start background backfill for dashboard symbols (non-blocking)
+    app.state.backfill_task = asyncio.create_task(
+        _startup_backfill(app.state.twelve_data)
+    )
+
     logger.info("Market Picture started")
     yield
+
+    # Cancel backfill if still running
+    if app.state.backfill_task and not app.state.backfill_task.done():
+        app.state.backfill_task.cancel()
+        try:
+            await app.state.backfill_task
+        except asyncio.CancelledError:
+            pass
+
     stop_scheduler()
     await app.state.fred.close()
     await app.state.twelve_data.close()
     await close_db()
     logger.info("Market Picture stopped")
+
+
+async def _startup_backfill(provider: TwelveDataProvider) -> None:
+    """Background task: backfill history for all dashboard symbols."""
+    try:
+        await asyncio.sleep(5)  # let the server finish starting
+        symbols = [sym for group in ASSETS.values() for sym in group]
+        await backfill_symbols(provider, symbols)
+    except asyncio.CancelledError:
+        logger.info("Startup backfill cancelled")
+    except Exception:
+        logger.exception("Startup backfill failed")
 
 
 app = FastAPI(title="Market Picture", lifespan=lifespan)
@@ -115,25 +145,42 @@ async def snapshot() -> dict:
 
 
 @app.get("/api/history/{symbol:path}")
-async def history(symbol: str, period: str = "1W") -> dict:
-    """Return sparkline data (date + close) for a symbol over a given period."""
-    if period not in _VALID_PERIODS:
+async def history(
+    symbol: str,
+    range_str: str = Query("1Y", alias="range"),
+    period: str = Query(None),
+) -> dict:
+    """Return OHLCV history for a symbol, fetching on demand if needed.
+
+    FRED symbols are served directly from the FRED provider.
+    Twelve Data symbols are served from the daily_history cache, with
+    automatic fetch-and-store on first request.
+
+    Query params:
+        range:  1D, 5D, 1W, 1M, 3M, 6M, 1Y, YTD, 5Y, Max (default 1Y)
+        period: deprecated alias for range (backward compat)
+    """
+    # Backward compat: accept ?period= when ?range= is not provided
+    effective_range = period if period and range_str == "1Y" else range_str
+
+    if effective_range not in VALID_RANGES:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid period. Must be one of: {', '.join(sorted(_VALID_PERIODS))}",
+            detail=f"Invalid range. Must be one of: {', '.join(sorted(VALID_RANGES))}",
         )
 
+    # FRED symbols: delegate to FRED provider (no caching needed)
     if symbol in FRED_SERIES or symbol == "SPREAD_2S10S":
-        provider = app.state.fred
-    else:
-        provider = app.state.twelve_data
+        bars = await app.state.fred.get_history(symbol, effective_range)
+        return {"symbol": symbol, "range": effective_range, "bars": bars}
 
-    bars = await provider.get_history(symbol, period)
-    return {
-        "symbol": symbol,
-        "period": period,
-        "bars": [{"date": b["date"], "close": b["close"]} for b in bars],
-    }
+    # Twelve Data symbols: use history cache
+    bars = await get_or_fetch_history(
+        provider=app.state.twelve_data,
+        symbol=symbol,
+        range_str=effective_range,
+    )
+    return {"symbol": symbol, "range": effective_range, "bars": bars}
 
 
 @app.get("/api/summary")
