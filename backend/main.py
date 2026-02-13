@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from zoneinfo import ZoneInfo
+
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
@@ -149,14 +151,6 @@ async def summary() -> dict:
     if row is None:
         raise HTTPException(status_code=404, detail="No summaries available yet")
 
-    def _parse_json(value: str | None) -> object:
-        if not value:
-            return None
-        try:
-            return json.loads(value)
-        except (json.JSONDecodeError, TypeError):
-            return None
-
     return {
         "date": row["date"],
         "period": row["period"],
@@ -184,6 +178,124 @@ async def search_ticker(ticker: str) -> dict:
         "change_pct": quote["change_pct"],
         "change_abs": quote["change_abs"],
         "timestamp": quote["timestamp"],
+    }
+
+
+_ET = ZoneInfo("US/Eastern")
+
+
+def _parse_json(value: str | None) -> object:
+    """Parse a JSON string, returning None on failure."""
+    if not value:
+        return None
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+@app.get("/api/narratives")
+async def narratives(date: str = Query(..., description="Date in YYYY-MM-DD format")) -> dict:
+    """Return all archived narratives for a specific date."""
+    session = await get_session()
+    try:
+        result = await session.execute(
+            text("""
+                SELECT timestamp, narrative_type, regime_label,
+                       narrative_text, signal_inputs, movers_snapshot
+                FROM narrative_archive
+                WHERE date = :date
+                ORDER BY id
+            """),
+            {"date": date},
+        )
+        rows = result.mappings().all()
+    finally:
+        await session.close()
+
+    return {
+        "date": date,
+        "narratives": [
+            {
+                "timestamp": row["timestamp"],
+                "narrative_type": row["narrative_type"],
+                "regime_label": row["regime_label"],
+                "narrative_text": row["narrative_text"],
+                "signal_inputs": _parse_json(row["signal_inputs"]),
+                "movers_snapshot": _parse_json(row["movers_snapshot"]),
+            }
+            for row in rows
+        ],
+    }
+
+
+@app.get("/api/narratives/recent")
+async def narratives_recent(days: int = Query(7, ge=1, le=90)) -> dict:
+    """Return archived narratives from the last N days."""
+    cutoff_date = (datetime.now(_ET) - timedelta(days=days)).date().isoformat()
+
+    session = await get_session()
+    try:
+        result = await session.execute(
+            text("""
+                SELECT timestamp, date, narrative_type, regime_label,
+                       narrative_text, signal_inputs, movers_snapshot
+                FROM narrative_archive
+                WHERE date >= :cutoff_date
+                ORDER BY date DESC, id DESC
+            """),
+            {"cutoff_date": cutoff_date},
+        )
+        rows = result.mappings().all()
+    finally:
+        await session.close()
+
+    return {
+        "days": days,
+        "narratives": [
+            {
+                "timestamp": row["timestamp"],
+                "date": row["date"],
+                "narrative_type": row["narrative_type"],
+                "regime_label": row["regime_label"],
+                "narrative_text": row["narrative_text"],
+                "signal_inputs": _parse_json(row["signal_inputs"]),
+                "movers_snapshot": _parse_json(row["movers_snapshot"]),
+            }
+            for row in rows
+        ],
+    }
+
+
+@app.get("/api/regime-history")
+async def regime_history() -> dict:
+    """Return regime labels for the last 90 days."""
+    cutoff_date = (datetime.now(_ET) - timedelta(days=90)).date().isoformat()
+
+    session = await get_session()
+    try:
+        result = await session.execute(
+            text("""
+                SELECT date, narrative_type, regime_label
+                FROM narrative_archive
+                WHERE date >= :cutoff_date
+                ORDER BY date DESC, id DESC
+            """),
+            {"cutoff_date": cutoff_date},
+        )
+        rows = result.mappings().all()
+    finally:
+        await session.close()
+
+    return {
+        "history": [
+            {
+                "date": row["date"],
+                "narrative_type": row["narrative_type"],
+                "regime_label": row["regime_label"],
+            }
+            for row in rows
+        ],
     }
 
 

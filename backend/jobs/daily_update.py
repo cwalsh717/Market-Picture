@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import MARKET_HOURS, SYMBOL_ASSET_CLASS, SYMBOL_MARKET_MAP
 from backend.db import get_session
@@ -107,6 +109,68 @@ async def save_quotes(quotes: dict[str, dict]) -> int:
 
 
 # ---------------------------------------------------------------------------
+# Narrative archive helpers
+# ---------------------------------------------------------------------------
+
+
+async def _compute_movers_snapshot(session: AsyncSession) -> dict:
+    """Query latest snapshots and group into up/down movers by change_pct."""
+    result = await session.execute(
+        text("""
+            SELECT s.symbol, s.change_pct
+            FROM market_snapshots s
+            INNER JOIN (
+                SELECT symbol, MAX(id) AS max_id
+                FROM market_snapshots GROUP BY symbol
+            ) latest ON s.id = latest.max_id
+            WHERE s.change_pct IS NOT NULL
+        """)
+    )
+    rows = result.mappings().all()
+
+    up = sorted(
+        [{"symbol": r["symbol"], "change_pct": r["change_pct"]} for r in rows if r["change_pct"] > 0],
+        key=lambda x: x["change_pct"],
+        reverse=True,
+    )
+    down = sorted(
+        [{"symbol": r["symbol"], "change_pct": r["change_pct"]} for r in rows if r["change_pct"] < 0],
+        key=lambda x: x["change_pct"],
+    )
+
+    return {"up": up, "down": down}
+
+
+async def _archive_narrative(
+    session: AsyncSession,
+    narrative_type: str,
+    regime: dict,
+    summary_text: str,
+    movers: dict,
+) -> None:
+    """Write a narrative to the narrative_archive table."""
+    today = datetime.now(_ET).date().isoformat()
+    await session.execute(
+        text("""
+            INSERT INTO narrative_archive
+                (timestamp, date, narrative_type, regime_label,
+                 narrative_text, signal_inputs, movers_snapshot)
+            VALUES (:timestamp, :date, :narrative_type, :regime_label,
+                    :narrative_text, :signal_inputs, :movers_snapshot)
+        """),
+        {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "date": today,
+            "narrative_type": narrative_type,
+            "regime_label": regime["label"],
+            "narrative_text": summary_text,
+            "signal_inputs": json.dumps(regime.get("signals")),
+            "movers_snapshot": json.dumps(movers),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Scheduled job functions
 # ---------------------------------------------------------------------------
 
@@ -171,10 +235,8 @@ async def generate_premarket_summary() -> None:
     """Generate the pre-market LLM summary (~8:00 AM ET).
 
     Computes regime classification, generates a narrative via the Claude API,
-    and persists to the summaries table.
+    and persists to both the summaries table and narrative_archive.
     """
-    import json
-
     from backend.intelligence.regime import classify_regime
     from backend.intelligence.summary import generate_premarket
 
@@ -206,6 +268,10 @@ async def generate_premarket_summary() -> None:
                 "regime_signals_json": json.dumps(regime["signals"]),
             },
         )
+
+        movers = await _compute_movers_snapshot(session)
+        await _archive_narrative(session, "pre_market", regime, summary["summary_text"], movers)
+
         await session.commit()
     except Exception:
         logger.exception("Failed to generate premarket summary")
@@ -218,10 +284,8 @@ async def generate_close_summary() -> None:
     """Generate the after-close LLM summary (~4:30 PM ET).
 
     Computes regime classification, generates a narrative via the Claude API,
-    and persists to the summaries table.
+    and persists to both the summaries table and narrative_archive.
     """
-    import json
-
     from backend.intelligence.regime import classify_regime
     from backend.intelligence.summary import generate_close
 
@@ -253,6 +317,10 @@ async def generate_close_summary() -> None:
                 "regime_signals_json": json.dumps(regime["signals"]),
             },
         )
+
+        movers = await _compute_movers_snapshot(session)
+        await _archive_narrative(session, "after_close", regime, summary["summary_text"], movers)
+
         await session.commit()
     except Exception:
         logger.exception("Failed to generate close summary")
