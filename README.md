@@ -1,127 +1,148 @@
 # Market Picture
 
-<!-- Replace with actual dashboard screenshot -->
-![Market Picture Dashboard](docs/screenshot.png)
+Like checking the weather, but for markets. Open it, see the regime, read the story, go on with your day.
 
-A cross-asset market dashboard that shows what's moving together and why. Instead of scrolling through dozens of tickers, Market Picture groups correlated moves, labels the current market regime (risk-on, risk-off, or mixed), and generates a plain-English narrative explaining what it all means.
+Market Picture is a cross-asset market dashboard that tracks 27 instruments across equities, rates, credit, currencies, commodities, critical minerals, and crypto. It classifies the current market regime as **RISK-ON**, **RISK-OFF**, or **MIXED**, and generates a plain-English narrative explaining what's happening -- twice daily, powered by Claude.
 
-Built for people who want to understand the market, not just watch prices.
+No login required. The landing page is the product.
 
-## What It Does
+## Features
 
-**Regime classification** -- Five signals (S&P 500 trend, volatility, high-yield credit spreads, dollar strength, gold vs equities) are evaluated in real time and combined into a single label: RISK-ON, RISK-OFF, or MIXED.
+**Regime classification** -- Five signals (S&P 500 trend, VIX, high-yield credit spreads, US dollar, gold vs equities) are combined into a single regime label with color-coded badge and per-signal breakdown.
 
-**Correlation detection** -- Every asset is compared against every other. The system groups assets that are rallying or selling together, flags pairs that normally move in lockstep but are diverging today, and surfaces unusual behavior like crypto suddenly tracking equities.
+**Daily narratives** -- Claude writes a pre-market briefing (~8 AM ET) and an after-close summary (~4:30 PM ET). Every narrative is archived and browsable in the journal.
 
-**Moving-together groups** -- The raw correlation data is translated into frontend-ready groups: "Rallying together: S&P 500, Nasdaq 100, Russell 2000 (up avg 1.8%)" or "Diverging: Nasdaq 100 (+0.6%) vs S&P 500 (-1.2%)".
+**Dashboard** -- Asset cards grouped by class, each with live price, change %, and intraday sparkline. Period toggle switches between Today (5-min bars), 1W, 1M, and YTD views.
 
-**LLM narrative** -- Twice daily, all of the above is fed to Claude to produce a concise market summary in plain English. A pre-market briefing at 8 AM ET covers overnight moves and what to watch. An after-close summary at 4:30 PM ET wraps up the day's story.
+**Chart page** -- Click any symbol for a full deep-dive chart built on TradingView Lightweight Charts v5. Candlestick and line modes, volume bars, moving average overlays (20/50/200-day), RSI(14), zoom controls, and time range selector from 1D to Max.
 
-**Scarcity vs abundance** -- Critical minerals (uranium, lithium, rare earths) are tracked alongside the broader market. When these commodities decouple from equities, the system flags it as a scarcity signal.
+**Search** -- Type any ticker in the nav bar to fetch on-demand data from Twelve Data and open its chart. Historical data is cached permanently with daily incremental updates.
+
+**Journal** -- Browse the narrative archive by date. Each entry shows the regime label, signal breakdown, and full narrative text.
 
 ## Asset Coverage
 
-| Asset Class | Symbols |
+| Asset Class | Instruments |
 |---|---|
-| **Equities** | S&P 500, Nasdaq 100, Russell 2000, VIX |
-| **International** | Japan, FTSE 100, Euro Stoxx 50, Hong Kong |
+| **Equities** | SPY, QQQ, IWM, VIXY |
+| **International** | EWJ (Japan), UKX (FTSE 100), FEZ (Euro Stoxx 50), EWH (Hong Kong) |
 | **Rates** | 2Y Treasury, 10Y Treasury, 2s10s spread |
-| **Credit** | IG corporate spread, HY corporate spread |
-| **Currencies** | US Dollar |
-| **Commodities** | Crude Oil, Natural Gas, Gold, Copper |
-| **Critical Minerals** | Uranium (URA), Lithium (LIT), Rare Earths (REMX) |
-| **Crypto** | Bitcoin, Ethereum |
+| **Credit** | IG spread, HY spread |
+| **Currencies** | UUP (Dollar Index) |
+| **Commodities** | USO (Crude Oil), UNG (Nat Gas), GLD (Gold), CPER (Copper) |
+| **Critical Minerals** | URA (Uranium), LIT (Lithium), REMX (Rare Earths) |
+| **Crypto** | BTC/USD, ETH/USD |
 
-27 instruments total -- 23 via Twelve Data, 4 via FRED.
+23 via [Twelve Data](https://twelvedata.com/) + 4 via [FRED](https://fred.stlouisfed.org/).
 
 ## Tech Stack
 
-- **Backend:** Python, FastAPI, APScheduler, SQLite
-- **Frontend:** HTML/CSS/JS, Tailwind CSS, Chart.js
-- **Data providers:** [Twelve Data](https://twelvedata.com/) (equities, FX, commodities, crypto), [FRED](https://fred.stlouisfed.org/) (rates, credit spreads)
-- **LLM:** Anthropic Claude API (market narrative generation)
+- **Backend:** Python, FastAPI, SQLAlchemy (async), APScheduler
+- **Database:** SQLite locally, PostgreSQL in production
+- **Frontend:** HTML/CSS/JS, Tailwind CSS, TradingView Lightweight Charts v5, Chart.js (sparklines)
+- **Data:** Twelve Data API (Grow tier), FRED API
+- **LLM:** Anthropic Claude API
+- **Hosting:** Railway (auto-deploys on push to main)
 
 ## Project Structure
 
 ```
-market-picture/
+Market-Picture/
 ├── backend/
-│   ├── main.py                  # FastAPI app + routes
-│   ├── config.py                # Asset lists, thresholds, regime rules
-│   ├── db.py                    # SQLite setup + migrations
+│   ├── main.py                  # FastAPI app, API routes, static file serving
+│   ├── config.py                # Assets, thresholds, regime rules, LLM prompts
+│   ├── db.py                    # SQLAlchemy async ORM + schema
 │   ├── providers/
-│   │   ├── base.py              # DataProvider interface
-│   │   ├── twelve_data.py       # Twelve Data implementation
-│   │   └── fred.py              # FRED implementation
+│   │   ├── base.py              # DataProvider abstract interface
+│   │   ├── twelve_data.py       # Twelve Data: quotes, history, intraday, search
+│   │   └── fred.py              # FRED: Treasury yields, credit spreads
 │   ├── intelligence/
-│   │   ├── regime.py            # Rule-based regime classification
-│   │   ├── correlations.py      # Cross-asset correlation detection
-│   │   └── summary.py           # Claude API narrative generation
+│   │   ├── regime.py            # Rule-based regime classification (5 signals)
+│   │   └── summary.py           # Claude API narrative generation + archive writes
+│   ├── services/
+│   │   └── history_cache.py     # On-demand fetch, permanent cache, daily updates
 │   ├── jobs/
-│   │   ├── scheduler.py         # APScheduler setup
-│   │   └── daily_update.py      # Fetch → compute → summarize pipeline
-│   └── requirements.txt
+│   │   ├── scheduler.py         # APScheduler: market-hours-aware scheduling
+│   │   └── daily_update.py      # Orchestrates fetch → compute → summarize → store
+│   └── tests/
 ├── frontend/
-│   ├── index.html
-│   ├── styles.css
-│   └── app.js
-└── .env
+│   ├── index.html               # Dashboard (landing page)
+│   ├── chart.html               # Symbol deep-dive chart page
+│   ├── journal.html             # Narrative archive browser
+│   ├── app.js                   # Dashboard logic + sparklines
+│   ├── chart.js                 # TradingView chart, MAs, RSI, zoom
+│   ├── journal.js               # Journal page logic
+│   ├── nav.js                   # Shared navigation + search
+│   └── styles.css               # Dark theme styles
+├── Dockerfile
+├── CLAUDE.md
+└── .env                         # API keys (not committed)
 ```
+
+## API Endpoints
+
+| Endpoint | Description |
+|---|---|
+| `GET /api/snapshot` | Latest prices for all assets, grouped by class |
+| `GET /api/summary` | Most recent regime + LLM narrative |
+| `GET /api/history/{symbol}?range=1Y` | Daily OHLCV bars (1D, 1W, 1M, 3M, 6M, 1Y, 5Y, Max) |
+| `GET /api/intraday/{symbol}` | 5-minute bars for today |
+| `GET /api/search/{ticker}` | Live quote for any Twelve Data symbol |
+| `GET /api/narratives?date=YYYY-MM-DD` | Archived narratives for a date |
+| `GET /api/narratives/recent?days=7` | Recent narrative history |
+| `GET /api/regime-history` | Regime labels for the last 90 days |
+| `POST /api/admin/fetch-now` | Manual trigger: fetch all data + run pipeline |
 
 ## Setup
 
 ### Prerequisites
 
 - Python 3.9+
-- A [Twelve Data](https://twelvedata.com/) API key (Grow tier or above)
-- A [FRED](https://fred.stlouisfed.org/docs/api/api_key.html) API key (free)
-- An [Anthropic](https://console.anthropic.com/) API key (for LLM summaries)
+- [Twelve Data](https://twelvedata.com/) API key (Grow tier)
+- [FRED](https://fred.stlouisfed.org/docs/api/api_key.html) API key (free)
+- [Anthropic](https://console.anthropic.com/) API key
 
-### Installation
+### Install and run
 
 ```bash
 git clone https://github.com/cwalsh717/Market-Picture.git
 cd Market-Picture
-```
-
-Install dependencies:
-
-```bash
 pip install -r backend/requirements.txt
 ```
 
-Create a `.env` file in the project root:
+Create `.env` in the project root:
 
 ```
-TWELVE_DATA_API_KEY=your_key_here
-FRED_API_KEY=your_key_here
-ANTHROPIC_API_KEY=your_key_here
+TWELVE_DATA_API_KEY=your_key
+FRED_API_KEY=your_key
+ANTHROPIC_API_KEY=your_key
 ```
 
-### Running locally
-
-Initialize the database and start the server:
+Start the server:
 
 ```bash
 uvicorn backend.main:app --reload
 ```
 
+Open [http://localhost:8000](http://localhost:8000). The database initializes automatically on first run, and historical data backfills in the background.
+
 ### Running tests
 
 ```bash
-pip install pytest pytest-asyncio
 python -m pytest backend/tests/ -v
 ```
 
-## Data Refresh Schedule
+## Data Refresh
 
-| Source | Frequency |
+| Source | Schedule |
 |---|---|
-| Twelve Data (equities, FX, commodities, minerals) | Every 10 min during US market hours |
+| Twelve Data (equities, FX, commodities, minerals) | Every 10 min during market hours |
 | Twelve Data (crypto) | Every 10 min, 24/7 |
-| FRED (rates, credit spreads) | Once daily, ~3:30 PM ET |
-| Pre-market summary (LLM) | ~8:00 AM ET |
-| After-close summary (LLM) | ~4:30 PM ET |
+| Twelve Data (international) | Every 10 min during respective market hours |
+| FRED (Treasury yields, credit spreads) | Once daily, ~3:30 PM ET |
+| Pre-market narrative | ~8:00 AM ET |
+| After-close narrative | ~4:30 PM ET |
+| Historical cache (daily bars) | ~4:30 PM ET for all cached symbols |
 
 ## License
 
