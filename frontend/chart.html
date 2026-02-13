@@ -14,11 +14,11 @@
   <div class="max-w-6xl mx-auto px-4 py-6">
 
     <!-- Symbol header -->
-    <header class="flex items-center justify-between flex-wrap gap-2 mb-6">
-      <h1 id="chart-title" class="text-xl font-bold"></h1>
-      <div id="chart-price" class="text-right">
-        <span id="current-price" class="text-lg font-medium"></span>
-        <span id="current-change" class="text-sm font-medium ml-2"></span>
+    <header class="mb-6">
+      <h1 id="chart-title" class="text-2xl font-bold mb-1"></h1>
+      <div id="chart-price" class="flex items-baseline gap-3">
+        <span id="current-price" class="text-3xl font-semibold tracking-tight"></span>
+        <span id="current-change" class="text-base font-medium"></span>
       </div>
     </header>
 
@@ -26,16 +26,21 @@
     <div class="chart-controls mb-4">
       <div class="flex flex-wrap gap-1.5" id="range-buttons"></div>
       <div class="flex flex-wrap gap-1.5 items-center" id="toggle-buttons"></div>
+      <div class="flex gap-1 items-center" id="zoom-buttons">
+        <button class="zoom-btn" id="zoom-out" title="Zoom out">&minus;</button>
+        <button class="zoom-btn" id="zoom-in" title="Zoom in">+</button>
+        <button class="zoom-btn" id="zoom-reset" title="Fit all">&#x27F3;</button>
+      </div>
     </div>
 
     <!-- Crosshair OHLC bar -->
     <div id="crosshair-ohlc" class="crosshair-ohlc mb-2">
       <span id="ohlc-date"></span>
-      <span>O <span id="ohlc-o">&mdash;</span></span>
-      <span>H <span id="ohlc-h">&mdash;</span></span>
-      <span>L <span id="ohlc-l">&mdash;</span></span>
-      <span>C <span id="ohlc-c">&mdash;</span></span>
-      <span>Vol <span id="ohlc-v">&mdash;</span></span>
+      <span class="ohlc-item"><span class="ohlc-label">O</span> <span id="ohlc-o">&mdash;</span></span>
+      <span class="ohlc-item"><span class="ohlc-label">H</span> <span id="ohlc-h">&mdash;</span></span>
+      <span class="ohlc-item"><span class="ohlc-label">L</span> <span id="ohlc-l">&mdash;</span></span>
+      <span class="ohlc-item"><span class="ohlc-label">C</span> <span id="ohlc-c">&mdash;</span></span>
+      <span class="ohlc-item"><span class="ohlc-label">Vol</span> <span id="ohlc-v">&mdash;</span></span>
     </div>
 
     <!-- Main chart -->

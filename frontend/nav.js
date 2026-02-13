@@ -61,7 +61,7 @@
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
             </svg>
           </div>
-          <p id="nav-search-error" class="nav-search-error hidden"></p>
+          <div id="nav-search-dropdown" class="nav-search-dropdown hidden"></div>
         </div>
       </div>
     `;
@@ -69,57 +69,150 @@
     wireSearch();
   }
 
-  function wireSearch() {
-    const input = document.getElementById("nav-search-input");
-    if (!input) return;
+  /* ── Dropdown helpers ─────────────────────────────────────────────────── */
 
-    const debouncedSearch = debounce((val) => handleSearch(val), 400);
+  function hideDropdown() {
+    var dd = document.getElementById("nav-search-dropdown");
+    if (dd) {
+      dd.classList.add("hidden");
+      dd.innerHTML = "";
+    }
+  }
 
-    input.addEventListener("input", (e) => debouncedSearch(e.target.value));
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        handleSearch(input.value);
-      }
+  function showDropdownItem(symbol) {
+    var dd = document.getElementById("nav-search-dropdown");
+    if (!dd) return;
+
+    dd.innerHTML =
+      '<div class="nav-search-dropdown-item" data-symbol="' +
+      escapeHtml(symbol) +
+      '">' +
+      '<span style="font-weight:600;">' + escapeHtml(symbol) + '</span>' +
+      '<span style="color:#6b7280;">Go to chart</span>' +
+      '</div>';
+    dd.classList.remove("hidden");
+
+    dd.querySelector(".nav-search-dropdown-item").addEventListener("click", function () {
+      hideDropdown();
+      window.location.href = "/chart.html?symbol=" + encodeURIComponent(symbol);
     });
   }
 
-  async function handleSearch(query) {
-    const trimmed = query.trim().toUpperCase();
-    const errorEl = document.getElementById("nav-search-error");
-    const spinner = document.getElementById("nav-search-spinner");
+  function showDropdownEmpty(query) {
+    var dd = document.getElementById("nav-search-dropdown");
+    if (!dd) return;
+
+    dd.innerHTML =
+      '<div class="nav-search-dropdown-empty">No results for "' +
+      escapeHtml(query) +
+      '"</div>';
+    dd.classList.remove("hidden");
+  }
+
+  function showDropdownError() {
+    var dd = document.getElementById("nav-search-dropdown");
+    if (!dd) return;
+
+    dd.innerHTML =
+      '<div class="nav-search-dropdown-empty">Search unavailable</div>';
+    dd.classList.remove("hidden");
+  }
+
+  /* ── Preview (dropdown only, no navigation) ───────────────────────────── */
+
+  async function showPreview(query) {
+    var trimmed = query.trim().toUpperCase();
+    var spinner = document.getElementById("nav-search-spinner");
 
     if (!trimmed) {
-      if (errorEl) errorEl.classList.add("hidden");
+      hideDropdown();
       return;
     }
 
     if (spinner) spinner.classList.remove("hidden");
-    if (errorEl) errorEl.classList.add("hidden");
 
     try {
-      const resp = await fetch(
-        `${API_BASE}/api/search/${encodeURIComponent(trimmed)}`
+      var resp = await fetch(
+        API_BASE + "/api/search/" + encodeURIComponent(trimmed)
       );
       if (resp.status === 404) {
-        if (errorEl) {
-          errorEl.textContent = `No results for "${escapeHtml(trimmed)}"`;
-          errorEl.classList.remove("hidden");
-        }
+        showDropdownEmpty(trimmed);
         return;
       }
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
-      window.location.href = `/chart.html?symbol=${encodeURIComponent(data.symbol)}`;
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      var data = await resp.json();
+      showDropdownItem(data.symbol);
     } catch (err) {
-      console.error("Nav search failed:", err);
-      if (errorEl) {
-        errorEl.textContent = "Search unavailable";
-        errorEl.classList.remove("hidden");
-      }
+      console.error("Nav search preview failed:", err);
+      showDropdownError();
     } finally {
       if (spinner) spinner.classList.add("hidden");
     }
+  }
+
+  /* ── Navigate (Enter key or direct action) ────────────────────────────── */
+
+  async function navigateToSymbol(query) {
+    var trimmed = query.trim().toUpperCase();
+    var spinner = document.getElementById("nav-search-spinner");
+
+    if (!trimmed) return;
+
+    if (spinner) spinner.classList.remove("hidden");
+
+    try {
+      var resp = await fetch(
+        API_BASE + "/api/search/" + encodeURIComponent(trimmed)
+      );
+      if (resp.status === 404) {
+        showDropdownEmpty(trimmed);
+        return;
+      }
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      var data = await resp.json();
+      window.location.href = "/chart.html?symbol=" + encodeURIComponent(data.symbol);
+    } catch (err) {
+      console.error("Nav search failed:", err);
+      showDropdownError();
+    } finally {
+      if (spinner) spinner.classList.add("hidden");
+    }
+  }
+
+  /* ── Wire up search input ─────────────────────────────────────────────── */
+
+  function wireSearch() {
+    var input = document.getElementById("nav-search-input");
+    if (!input) return;
+
+    var debouncedPreview = debounce(function (val) { showPreview(val); }, 400);
+
+    input.addEventListener("input", function (e) {
+      var val = e.target.value.trim();
+      if (!val) {
+        hideDropdown();
+        return;
+      }
+      debouncedPreview(val);
+    });
+
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        hideDropdown();
+        navigateToSymbol(input.value.trim());
+      }
+      if (e.key === "Escape") {
+        hideDropdown();
+      }
+    });
+
+    // Close dropdown on outside click
+    document.addEventListener("click", function (e) {
+      if (!e.target.closest(".nav-search")) {
+        hideDropdown();
+      }
+    });
   }
 
   // Build nav as soon as DOM is ready

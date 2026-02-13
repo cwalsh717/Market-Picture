@@ -245,3 +245,19 @@ class TwelveDataProvider(DataProvider):
         except (httpx.HTTPError, TwelveDataError, KeyError, ValueError) as exc:
             logger.error("search(%s) failed: %s", query, exc)
             return []
+
+    async def get_intraday(self, symbol: str) -> list[dict]:
+        """Fetch 5-minute intraday bars for today."""
+        try:
+            raw = await self._request(
+                "/time_series",
+                {
+                    "symbol": symbol,
+                    "interval": "5min",
+                    "outputsize": 78,  # ~6.5 hours of 5min bars
+                },
+            )
+            return _parse_time_series(raw)
+        except (httpx.HTTPError, TwelveDataError, KeyError, ValueError) as exc:
+            logger.error("get_intraday(%s) failed: %s", symbol, exc)
+            return []

@@ -56,6 +56,36 @@ function init() {
 
   buildControls();
   createCharts();
+
+  // Wire zoom controls
+  document.getElementById("zoom-in").addEventListener("click", () => {
+    const range = chart.timeScale().getVisibleLogicalRange();
+    if (!range) return;
+    const span = range.to - range.from;
+    const center = (range.from + range.to) / 2;
+    const newSpan = span * 0.6;
+    chart.timeScale().setVisibleLogicalRange({
+      from: center - newSpan / 2,
+      to: center + newSpan / 2,
+    });
+  });
+
+  document.getElementById("zoom-out").addEventListener("click", () => {
+    const range = chart.timeScale().getVisibleLogicalRange();
+    if (!range) return;
+    const span = range.to - range.from;
+    const center = (range.from + range.to) / 2;
+    const newSpan = span * 1.5;
+    chart.timeScale().setVisibleLogicalRange({
+      from: center - newSpan / 2,
+      to: center + newSpan / 2,
+    });
+  });
+
+  document.getElementById("zoom-reset").addEventListener("click", () => {
+    chart.timeScale().fitContent();
+  });
+
   loadData(currentSymbol, currentRange);
 }
 
@@ -88,7 +118,10 @@ function buildControls() {
 
   // MA toggles
   for (const period of [20, 50, 200]) {
-    const btn = createBtn("MA " + period, "btn-ma-" + period, false);
+    const btn = document.createElement("button");
+    btn.className = "toggle-btn";
+    btn.id = "btn-ma-" + period;
+    btn.innerHTML = `<span class="ma-dot" style="background:${MA_COLORS[period]}"></span>MA ${period}`;
     btn.addEventListener("click", () => {
       toggleMA(period);
       btn.classList.toggle("active");
@@ -579,6 +612,8 @@ function showLoading(on) {
   document.getElementById("crosshair-ohlc").style.visibility = on ? "hidden" : "visible";
   document.getElementById("price-stats").style.visibility = on ? "hidden" : "visible";
   document.querySelector(".chart-controls").style.visibility = on ? "hidden" : "visible";
+  const zoom = document.getElementById("zoom-buttons");
+  if (zoom) zoom.style.visibility = on ? "hidden" : "visible";
 }
 
 function showError(message) {
@@ -589,6 +624,8 @@ function showError(message) {
   document.getElementById("price-stats").style.display = "none";
   const controls = document.querySelector(".chart-controls");
   if (controls) controls.style.display = "none";
+  const zoom = document.getElementById("zoom-buttons");
+  if (zoom) zoom.style.display = "none";
   document.getElementById("chart-error").classList.remove("hidden");
   document.getElementById("chart-error-message").textContent = message;
 }

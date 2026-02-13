@@ -228,6 +228,20 @@ async def search_ticker(ticker: str) -> dict:
     }
 
 
+@app.get("/api/intraday/{symbol:path}")
+async def intraday(symbol: str) -> dict:
+    """Return 5-minute intraday bars for today.
+
+    Used by the dashboard "Today" view for richer intraday sparklines.
+    FRED symbols are not supported for intraday — returns empty bars.
+    """
+    if symbol in FRED_SERIES or symbol == "SPREAD_2S10S":
+        return {"symbol": symbol, "bars": []}
+
+    bars = await app.state.twelve_data.get_intraday(symbol)
+    return {"symbol": symbol, "bars": bars}
+
+
 _ET = ZoneInfo("US/Eastern")
 
 

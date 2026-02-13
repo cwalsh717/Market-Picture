@@ -105,6 +105,14 @@ async function fetchHistory(symbol, range) {
   return resp.json();
 }
 
+async function fetchIntraday(symbol) {
+  const resp = await fetch(
+    `${API_BASE}/api/intraday/${encodeURIComponent(symbol)}`
+  );
+  if (!resp.ok) throw new Error(`Intraday error: ${resp.status}`);
+  return resp.json();
+}
+
 function splitRatesAndCredit(assets) {
   const result = Object.assign({}, assets);
   if (!result.rates) return result;
@@ -320,7 +328,9 @@ async function loadAllSparklines(assets, period) {
         return;
       }
       try {
-        const data = await fetchHistory(symbol, period);
+        const data = period === "1D"
+          ? await fetchIntraday(symbol)
+          : await fetchHistory(symbol, period);
         sparklineCache[cacheKey] = data.bars;
         renderSparkline(symbol, data.bars);
       } catch (err) {
