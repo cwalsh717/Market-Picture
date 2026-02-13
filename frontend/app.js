@@ -79,7 +79,6 @@ const ASSET_EXPLAINERS = {
 let currentPeriod = "1D";
 const sparklineCache = {};  // { "SYMBOL:1D": bars, ... }
 const sparklineCharts = {}; // { "SYMBOL": Chart instance }
-const expandedCharts = {};  // { "SYMBOL": Chart instance }
 
 // ---------------------------------------------------------------------------
 // Data fetching
@@ -206,9 +205,10 @@ function renderAssetCard(asset) {
   const sign = positive ? "+" : "";
   const colorClass = positive ? "text-emerald-400" : "text-red-400";
   const explainer = ASSET_EXPLAINERS[asset.symbol] || "";
+  const chartUrl = `/chart.html?symbol=${encodeURIComponent(asset.symbol)}`;
 
   return `
-    <div class="asset-card">
+    <a href="${chartUrl}" class="asset-card block" style="text-decoration:none;color:inherit;">
       <div class="flex items-start justify-between gap-2 mb-1">
         <div class="min-w-0">
           <div class="flex items-center gap-1.5">
@@ -225,11 +225,8 @@ function renderAssetCard(asset) {
         <span class="text-base font-medium text-gray-200">${formatPrice(asset.symbol, asset.price)}</span>
         <span class="text-sm font-medium ${colorClass}">${arrow} ${sign}${pct.toFixed(2)}%</span>
       </div>
-      <div class="expanded-chart hidden" data-symbol="${escapeAttr(asset.symbol)}">
-        <canvas></canvas>
-      </div>
       ${explainer ? `<div class="info-tooltip hidden text-xs text-gray-400">${escapeHtml(explainer)}</div>` : ""}
-    </div>`;
+    </a>`;
 }
 
 function renderAssetSections(assets) {
@@ -334,139 +331,6 @@ async function loadAllSparklines(assets, period) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Expanded chart
-// ---------------------------------------------------------------------------
-
-function formatDateLabel(dateStr) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-async function toggleExpandedChart(card, symbol) {
-  const container = card.querySelector(".expanded-chart");
-  if (!container) return;
-
-  // Collapse
-  if (!container.classList.contains("hidden")) {
-    container.classList.add("hidden");
-    return;
-  }
-
-  // Expand — show container first so Chart.js can measure it
-  container.classList.remove("hidden");
-
-  // Reuse existing chart instance
-  if (expandedCharts[symbol]) {
-    expandedCharts[symbol].resize();
-    return;
-  }
-
-  // Get data from cache or fetch
-  const cacheKey = symbol + ":" + currentPeriod;
-  let bars = sparklineCache[cacheKey];
-  if (!bars) {
-    try {
-      const data = await fetchHistory(symbol, currentPeriod);
-      bars = data.bars;
-      sparklineCache[cacheKey] = bars;
-    } catch (err) {
-      console.warn("Expanded chart failed for", symbol, err);
-      container.classList.add("hidden");
-      return;
-    }
-  }
-
-  if (!bars || !bars.length) {
-    container.classList.add("hidden");
-    return;
-  }
-
-  const closes = bars.map((b) => b.close);
-  const up = closes[closes.length - 1] >= closes[0];
-  const lineColor = up ? "rgb(52, 211, 153)" : "rgb(248, 113, 113)";
-  const fillColor = up ? "rgba(52, 211, 153, 0.08)" : "rgba(248, 113, 113, 0.08)";
-
-  const canvas = container.querySelector("canvas");
-  expandedCharts[symbol] = new Chart(canvas, {
-    type: "line",
-    data: {
-      labels: bars.map((b) => b.date),
-      datasets: [{
-        data: closes,
-        borderColor: lineColor,
-        backgroundColor: fillColor,
-        borderWidth: 2,
-        pointRadius: 0,
-        pointHitRadius: 8,
-        tension: 0.3,
-        fill: true,
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          enabled: true,
-          backgroundColor: "rgba(17, 24, 39, 0.95)",
-          titleColor: "#9ca3af",
-          bodyColor: "#f3f4f6",
-          borderColor: "#374151",
-          borderWidth: 1,
-          padding: 8,
-          displayColors: false,
-          callbacks: {
-            title: function (items) {
-              return formatDateLabel(items[0].label);
-            },
-            label: function (item) {
-              return formatPrice(symbol, item.raw);
-            },
-          },
-        },
-      },
-      scales: {
-        x: {
-          display: true,
-          ticks: {
-            color: "#6b7280",
-            font: { size: 10 },
-            maxTicksLimit: 6,
-            callback: function (val, idx) {
-              return formatDateLabel(this.getLabelForValue(val));
-            },
-          },
-          grid: { display: false },
-          border: { display: false },
-        },
-        y: {
-          display: true,
-          position: "right",
-          ticks: {
-            color: "#6b7280",
-            font: { size: 10 },
-            maxTicksLimit: 5,
-          },
-          grid: { color: "rgba(55, 65, 81, 0.3)" },
-          border: { display: false },
-        },
-      },
-      animation: { duration: 300 },
-    },
-  });
-}
-
-function collapseAllExpandedCharts() {
-  for (const sym of Object.keys(expandedCharts)) {
-    expandedCharts[sym].destroy();
-    delete expandedCharts[sym];
-  }
-  document.querySelectorAll(".expanded-chart").forEach((el) => {
-    el.classList.add("hidden");
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Interactions
@@ -479,7 +343,6 @@ function initPeriodToggle(assets) {
       buttons.forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       currentPeriod = btn.dataset.period;
-      collapseAllExpandedCharts();
       loadAllSparklines(assets, currentPeriod);
     });
   });
@@ -491,6 +354,7 @@ function initInfoTooltips() {
   container.addEventListener("click", (e) => {
     const btn = e.target.closest(".info-btn");
     if (!btn) return;
+    e.preventDefault();
     e.stopPropagation();
     const card = btn.closest(".asset-card");
     if (!card) return;
@@ -499,20 +363,6 @@ function initInfoTooltips() {
   });
 }
 
-function initExpandedCharts() {
-  const container = document.getElementById("asset-sections");
-  if (!container) return;
-  container.addEventListener("click", (e) => {
-    // Don't trigger on info button or search elements
-    if (e.target.closest(".info-btn")) return;
-    const card = e.target.closest(".asset-card");
-    if (!card) return;
-    const chartContainer = card.querySelector(".expanded-chart");
-    if (!chartContainer) return;
-    const symbol = chartContainer.dataset.symbol;
-    window.location.href = `/chart.html?symbol=${encodeURIComponent(symbol)}`;
-  });
-}
 
 function showError(message) {
   document.getElementById("loading").classList.add("hidden");
@@ -561,35 +411,7 @@ async function searchTicker(query) {
   return resp.json();
 }
 
-function renderSearchResult(data) {
-  const resultEl = document.getElementById("search-result");
-  const errorEl = document.getElementById("search-error");
-  errorEl.classList.add("hidden");
-
-  document.getElementById("search-symbol").textContent = data.symbol;
-  document.getElementById("search-price").textContent = Number(data.price).toFixed(2);
-
-  const changeEl = document.getElementById("search-change");
-  const pct = Number(data.change_pct);
-  const abs = Number(data.change_abs);
-  const positive = pct >= 0;
-  const arrow = positive ? "\u25B2" : "\u25BC";
-  const sign = positive ? "+" : "";
-  changeEl.textContent = `${arrow} ${sign}${abs.toFixed(2)} (${sign}${pct.toFixed(2)}%)`;
-  changeEl.className = `text-sm font-medium ${positive ? "text-emerald-400" : "text-red-400"}`;
-
-  document.getElementById("search-timestamp").textContent = `Last updated: ${data.timestamp}`;
-  resultEl.classList.remove("hidden");
-
-  // Click to open chart page
-  resultEl.style.cursor = "pointer";
-  resultEl.onclick = () => {
-    window.location.href = `/chart.html?symbol=${encodeURIComponent(data.symbol)}`;
-  };
-}
-
 function clearSearchResult() {
-  document.getElementById("search-result").classList.add("hidden");
   document.getElementById("search-error").classList.add("hidden");
 }
 
@@ -614,7 +436,9 @@ async function handleSearch(query) {
       errorEl.textContent = `No results for "${trimmed}"`;
       errorEl.classList.remove("hidden");
     } else {
-      renderSearchResult(data);
+      // Navigate directly to chart page
+      window.location.href = `/chart.html?symbol=${encodeURIComponent(data.symbol)}`;
+      return;
     }
   } catch (err) {
     console.error("Search failed:", err);
@@ -658,7 +482,6 @@ async function init() {
     assets = splitRatesAndCredit(snapshotData.assets);
     renderAssetSections(assets);
     initInfoTooltips();
-    initExpandedCharts();
     initPeriodToggle(assets);
   }
 

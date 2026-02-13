@@ -88,11 +88,6 @@
   padding-top: 0.625rem;
 }
 
-/* Search result card — clickable to open chart */
-#search-result {
-  cursor: pointer;
-}
-
 /* Mobile responsive */
 @media (max-width: 640px) {
   .max-w-4xl {
@@ -102,14 +97,6 @@
   header h1 {
     font-size: 1.25rem;
   }
-}
-
-/* Expanded chart */
-.expanded-chart {
-  height: 200px;
-  margin-top: 0.75rem;
-  border-top: 1px solid #374151;
-  padding-top: 0.75rem;
 }
 
 /* ── Chart page ───────────────────────────────────────────────────────── */
