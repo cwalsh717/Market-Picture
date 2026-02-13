@@ -13,13 +13,12 @@
 </head>
 <body class="bg-gray-950 text-gray-100 min-h-screen">
 
+  <nav id="main-nav"></nav>
+
   <div class="max-w-4xl mx-auto px-4 py-6">
 
-    <!-- Header -->
-    <header class="flex items-center justify-between flex-wrap gap-2 mb-8">
-      <h1 class="text-2xl font-bold tracking-tight">Market Picture</h1>
-      <div id="header-meta" class="text-sm text-gray-400"></div>
-    </header>
+    <!-- Header meta (date + period) -->
+    <div id="header-meta" class="text-sm text-gray-400 mb-6"></div>
 
     <!-- Main content -->
     <main id="app">
@@ -80,27 +79,6 @@
         <!-- Narrative -->
         <section id="narrative-section" class="mb-10"></section>
 
-        <!-- Search -->
-        <section id="search-section" class="mb-10">
-          <div class="relative">
-            <input
-              id="search-input"
-              type="text"
-              placeholder="Search any ticker… e.g. AAPL"
-              class="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-gray-100 placeholder-gray-500 focus:outline-none focus:border-gray-500 transition-colors"
-              autocomplete="off"
-              spellcheck="false"
-            />
-            <div id="search-spinner" class="hidden absolute right-3 top-3.5">
-              <svg class="animate-spin h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-              </svg>
-            </div>
-          </div>
-          <p id="search-error" class="hidden mt-3 text-sm text-gray-500"></p>
-        </section>
-
         <!-- Period toggle -->
         <section id="period-toggle-section" class="mb-6">
           <div class="flex flex-wrap gap-2">
@@ -122,6 +100,7 @@
 
   </div>
 
+  <script src="nav.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="app.js"></script>
 </body>

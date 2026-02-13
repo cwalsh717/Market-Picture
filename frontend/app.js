@@ -393,64 +393,6 @@ function escapeAttr(str) {
 }
 
 // ---------------------------------------------------------------------------
-// Search
-// ---------------------------------------------------------------------------
-
-function debounce(fn, ms = 300) {
-  let timer;
-  return function (...args) {
-    clearTimeout(timer);
-    timer = setTimeout(() => fn.apply(this, args), ms);
-  };
-}
-
-async function searchTicker(query) {
-  const resp = await fetch(`${API_BASE}/api/search/${encodeURIComponent(query)}`);
-  if (resp.status === 404) return null;
-  if (!resp.ok) throw new Error(`Search error: ${resp.status}`);
-  return resp.json();
-}
-
-function clearSearchResult() {
-  document.getElementById("search-error").classList.add("hidden");
-}
-
-function setSearchLoading(on) {
-  const spinner = document.getElementById("search-spinner");
-  if (on) spinner.classList.remove("hidden");
-  else spinner.classList.add("hidden");
-}
-
-async function handleSearch(query) {
-  const trimmed = query.trim().toUpperCase();
-  if (!trimmed) {
-    clearSearchResult();
-    return;
-  }
-  setSearchLoading(true);
-  clearSearchResult();
-  try {
-    const data = await searchTicker(trimmed);
-    if (!data) {
-      const errorEl = document.getElementById("search-error");
-      errorEl.textContent = `No results for "${trimmed}"`;
-      errorEl.classList.remove("hidden");
-    } else {
-      // Navigate directly to chart page
-      window.location.href = `/chart.html?symbol=${encodeURIComponent(data.symbol)}`;
-      return;
-    }
-  } catch (err) {
-    console.error("Search failed:", err);
-    const errorEl = document.getElementById("search-error");
-    errorEl.textContent = "Search unavailable. Please try again later.";
-    errorEl.classList.remove("hidden");
-  } finally {
-    setSearchLoading(false);
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 
@@ -502,19 +444,6 @@ async function init() {
   // Load sparklines asynchronously (progressive)
   if (assets) {
     loadAllSparklines(assets, currentPeriod);
-  }
-
-  // Wire search
-  const searchInput = document.getElementById("search-input");
-  if (searchInput) {
-    const debouncedSearch = debounce((e) => handleSearch(e.target.value));
-    searchInput.addEventListener("input", debouncedSearch);
-    searchInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        handleSearch(searchInput.value);
-      }
-    });
   }
 }
 

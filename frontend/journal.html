@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Journal — Market Picture</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+  <nav id="main-nav"></nav>
+
+  <div class="max-w-3xl mx-auto px-4 py-6">
+
+    <!-- Controls: date picker -->
+    <div class="journal-controls">
+      <input type="date" id="date-picker" />
+      <button id="date-go">Go</button>
+      <button id="date-reset" class="text-gray-500 text-xs" style="background:none;border:none;cursor:pointer;">Show recent</button>
+      <span id="journal-status" class="text-xs text-gray-500"></span>
+    </div>
+
+    <!-- Loading skeleton -->
+    <div id="journal-loading">
+      <div class="skeleton h-40 rounded-lg mb-4"></div>
+      <div class="skeleton h-40 rounded-lg mb-4"></div>
+      <div class="skeleton h-40 rounded-lg mb-4"></div>
+    </div>
+
+    <!-- Error state -->
+    <div id="journal-error" class="hidden text-center py-16">
+      <p class="text-gray-400 text-lg" id="journal-error-message"></p>
+    </div>
+
+    <!-- Empty state -->
+    <div id="journal-empty" class="hidden text-center py-16">
+      <p class="text-gray-500">No narratives found for this period.</p>
+    </div>
+
+    <!-- Narrative entries -->
+    <div id="journal-entries"></div>
+
+  </div>
+
+  <script src="nav.js"></script>
+  <script src="journal.js"></script>
+</body>
+</html>

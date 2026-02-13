@@ -9,14 +9,13 @@
 </head>
 <body class="bg-gray-950 text-gray-100 min-h-screen">
 
+  <nav id="main-nav"></nav>
+
   <div class="max-w-6xl mx-auto px-4 py-6">
 
-    <!-- Header -->
+    <!-- Symbol header -->
     <header class="flex items-center justify-between flex-wrap gap-2 mb-6">
-      <div class="flex items-center gap-3">
-        <a href="/" class="text-sm text-gray-400 hover:text-gray-200 transition-colors">&larr; Market Picture</a>
-        <h1 id="chart-title" class="text-xl font-bold"></h1>
-      </div>
+      <h1 id="chart-title" class="text-xl font-bold"></h1>
       <div id="chart-price" class="text-right">
         <span id="current-price" class="text-lg font-medium"></span>
         <span id="current-change" class="text-sm font-medium ml-2"></span>
@@ -61,7 +60,8 @@
 
   </div>
 
-  <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="nav.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@5.1.0/dist/lightweight-charts.standalone.production.js"></script>
   <script src="chart.js"></script>
 </body>
 </html>

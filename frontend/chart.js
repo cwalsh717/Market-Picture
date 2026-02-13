@@ -216,7 +216,7 @@ function rebuildSeries() {
   const bars = currentBars;
 
   if (chartMode === "candle" && !isFredSymbol) {
-    candleSeries = chart.addCandlestickSeries({
+    candleSeries = chart.addSeries(LightweightCharts.CandlestickSeries, {
       upColor: "#34d399",
       downColor: "#f87171",
       borderUpColor: "#34d399",
@@ -234,7 +234,7 @@ function rebuildSeries() {
       }))
     );
   } else {
-    lineSeries = chart.addLineSeries({
+    lineSeries = chart.addSeries(LightweightCharts.LineSeries, {
       color: "#60a5fa",
       lineWidth: 2,
       crosshairMarkerRadius: 4,
@@ -255,7 +255,7 @@ function rebuildSeries() {
             : "rgba(248,113,113,0.3)",
       }));
     if (volData.length) {
-      volumeSeries = chart.addHistogramSeries({
+      volumeSeries = chart.addSeries(LightweightCharts.HistogramSeries, {
         priceFormat: { type: "volume" },
         priceScaleId: "volume",
       });
@@ -320,7 +320,7 @@ function addMASeries(period) {
     value: val,
   }));
 
-  maSeries[period] = chart.addLineSeries({
+  maSeries[period] = chart.addSeries(LightweightCharts.LineSeries, {
     color: MA_COLORS[period],
     lineWidth: 1,
     priceLineVisible: false,
@@ -388,7 +388,7 @@ function buildRSI() {
     value: val,
   }));
 
-  rsiLineSeries = rsiChart.addLineSeries({
+  rsiLineSeries = rsiChart.addSeries(LightweightCharts.LineSeries, {
     color: "#a78bfa",
     lineWidth: 1.5,
     priceLineVisible: false,
