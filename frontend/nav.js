@@ -22,6 +22,7 @@
     if (path === "/" || path === "/index.html") return "dashboard";
     if (path === "/chart.html") return "chart";
     if (path === "/journal.html") return "journal";
+    if (path === "/about.html") return "about";
     return "";
   }
 
@@ -45,6 +46,7 @@
             <a href="/" class="${linkClass("dashboard")}">Dashboard</a>
             <a href="/chart.html" class="${linkClass("chart")}">Chart</a>
             <a href="/journal.html" class="${linkClass("journal")}">Journal</a>
+            <a href="/about.html" class="${linkClass("about")}">About</a>
           </div>
         </div>
         <div class="nav-search">
