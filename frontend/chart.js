@@ -45,11 +45,7 @@ const CHART_THEME = {
 // ── Init ───────────────────────────────────────────────────────────────────
 function init() {
   const params = new URLSearchParams(window.location.search);
-  currentSymbol = params.get("symbol") || "";
-  if (!currentSymbol) {
-    showError("No symbol specified.");
-    return;
-  }
+  currentSymbol = params.get("symbol") || "SPY";
 
   document.title = `${currentSymbol} — Market Picture`;
   document.getElementById("chart-title").textContent = currentSymbol;
