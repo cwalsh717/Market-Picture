@@ -36,15 +36,22 @@ Market-Picture/
 │   ├── intelligence/
 │   │   ├── regime.py            # Regime classification (rule-based)
 │   │   └── summary.py           # Claude API summaries + narrative archive writes
+│   ├── services/
+│   │   └── history_cache.py     # On-demand OHLCV fetch, cache, and backfill
 │   ├── jobs/
 │   │   ├── scheduler.py         # APScheduler setup
 │   │   └── daily_update.py      # Orchestrates: fetch → compute → summarize → archive
 │   └── requirements.txt
 ├── frontend/
 │   ├── index.html               # Main dashboard (the landing page)
+│   ├── app.js                   # Dashboard logic (regime, cards, sparklines)
 │   ├── chart.html               # Symbol deep-dive chart page
-│   ├── styles.css
-│   └── app.js
+│   ├── chart.js                 # TradingView Lightweight Charts logic
+│   ├── journal.html             # Narrative archive browser
+│   ├── journal.js               # Journal page logic
+│   ├── about.html               # About page
+│   ├── nav.js                   # Shared navigation bar + search
+│   └── styles.css               # All page styles
 ├── .env                         # Local API keys (gitignored)
 ├── .gitignore
 ├── .dockerignore
@@ -150,12 +157,11 @@ When a user searches for or clicks on any symbol, they open a full chart page.
 
 ### Logged-In Features (free account, not yet built):
 - Watchlists: Save symbols, personal tab
-- Market Journal: Browse narrative archive by date
 - Alerts (future): Regime change, VIX spike, price thresholds via email
 
-## v2 Build Order (do these in sequence)
+## v2 Build Order
 
-### Phase 5: PostgreSQL Migration
+### Phase 5: PostgreSQL Migration (next)
 - Provision PostgreSQL on Railway
 - Migrate existing schema (quotes, summaries)
 - Add tables: daily_history, narrative_archive, users, watchlists
@@ -163,26 +169,9 @@ When a user searches for or clicks on any symbol, they open a full chart page.
 - Update DATABASE_URL env var
 - Test all existing endpoints
 
-### Phase 6: Narrative Archive
-- Create narrative_archive table
-- Modify summary.py to write every LLM output to archive
-- Store signal_inputs + movers_snapshot alongside each narrative
-- Add narrative API endpoints
-
-### Phase 7: On-Demand Historical Data Cache
-- Create daily_history table (symbol, date, OHLCV)
-- On search/watchlist-add: check if history exists → fetch if not → store
-- Daily job: append new bar for all cached symbols
-- Rate limit aware: queue requests, respect 55 credits/min
-- Add `GET /api/history/{symbol}` endpoint
-
-### Phase 8: Chart Page + Better Charting
-- New chart.html page with TradingView Lightweight Charts v5
-- Replace Chart.js sparklines on dashboard with Lightweight Charts
-- Candlestick + line chart toggle
-- MA overlays, volume, RSI
-- Time range selector
-- Symbol deep dive layout
+### Phase 6: Narrative Archive — DONE
+### Phase 7: On-Demand Historical Data Cache — DONE
+### Phase 8: Chart Page + Better Charting — DONE
 
 ### Phase 9: Auth + Watchlists
 - Users table (id, email, password_hash, created_at)
@@ -193,11 +182,8 @@ When a user searches for or clicks on any symbol, they open a full chart page.
 - Frontend: login/register modal, watchlist tab
 
 ### Phase 10: Landing Page Polish
-- Regime badge as dominant hero element
-- Tighter narrative display
-- Fix UI bugs (sparkline missing, name truncation, empty cards)
 - Mobile optimization pass
-- Loading states and skeleton screens
+- Performance tuning
 
 ## Code Conventions
 - Python 3.11+, type hints everywhere
@@ -219,13 +205,6 @@ ANTHROPIC_API_KEY=your_key
 DATABASE_URL=postgresql://user:pass@host:port/dbname
 JWT_SECRET=your_secret
 ```
-
-## Known Issues (must fix)
-- Sparklines missing on collapsed cards
-- "VIX (Short-Term Fu..." truncated — card name overflow
-- Empty cards when collapsed (Russell 2000, S&P)
-- API keys need rotation (were briefly exposed)
-- Database needs initial population via manual fetch
 
 ## Git Workflow
 - Push to `main` directly (solo project)
