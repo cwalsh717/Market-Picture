@@ -328,6 +328,38 @@ async def narratives_recent(days: int = Query(7, ge=1, le=90)) -> dict:
     }
 
 
+@app.delete("/api/admin/narratives")
+async def delete_narratives(date: str = Query(..., description="Date in YYYY-MM-DD format")) -> dict:
+    """Temporarily admin endpoint: delete all narratives for a given date."""
+    session = await get_session()
+    try:
+        result = await session.execute(
+            text("DELETE FROM narrative_archive WHERE date = :date"),
+            {"date": date},
+        )
+        await session.commit()
+        deleted = result.rowcount
+    finally:
+        await session.close()
+    return {"deleted": deleted, "date": date}
+
+
+@app.delete("/api/admin/summaries")
+async def delete_summaries(date: str = Query(..., description="Date in YYYY-MM-DD format")) -> dict:
+    """Temporarily admin endpoint: delete all summaries for a given date."""
+    session = await get_session()
+    try:
+        result = await session.execute(
+            text("DELETE FROM summaries WHERE date = :date"),
+            {"date": date},
+        )
+        await session.commit()
+        deleted = result.rowcount
+    finally:
+        await session.close()
+    return {"deleted": deleted, "date": date}
+
+
 @app.get("/api/regime-history")
 async def regime_history() -> dict:
     """Return regime labels for the last 90 days."""
