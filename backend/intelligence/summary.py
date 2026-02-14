@@ -61,8 +61,10 @@ def build_premarket_prompt(
     regime: RegimeResult,
 ) -> str:
     """Build the user prompt for the pre-market summary."""
+    day_name = datetime.strptime(date_str, "%Y-%m-%d").strftime("%A")
     return PREMARKET_USER_TEMPLATE.format(
         date=date_str,
+        day_name=day_name,
         regime_label=regime["label"],
         regime_reason=regime["reason"],
         regime_signals=_format_regime_signals(regime["signals"]),
@@ -74,8 +76,10 @@ def build_close_prompt(
     regime: RegimeResult,
 ) -> str:
     """Build the user prompt for the after-close summary."""
+    day_name = datetime.strptime(date_str, "%Y-%m-%d").strftime("%A")
     return CLOSE_USER_TEMPLATE.format(
         date=date_str,
+        day_name=day_name,
         regime_label=regime["label"],
         regime_reason=regime["reason"],
         regime_signals=_format_regime_signals(regime["signals"]),

@@ -153,7 +153,7 @@ SUMMARY_SYSTEM_PROMPT: str = (
 )
 
 PREMARKET_USER_TEMPLATE: str = (
-    "Write a pre-market briefing for {date}.\n\n"
+    "Write a pre-market briefing for {day_name}, {date}.\n\n"
     "Current regime: {regime_label} — {regime_reason}\n\n"
     "Signals:\n{regime_signals}\n\n"
     "Cover: (1) the regime and what's driving it, "
@@ -161,7 +161,7 @@ PREMARKET_USER_TEMPLATE: str = (
 )
 
 CLOSE_USER_TEMPLATE: str = (
-    "Write an after-close market summary for {date}.\n\n"
+    "Write an after-close market summary for {day_name}, {date}.\n\n"
     "Regime: {regime_label} — {regime_reason}\n"
     "Signals:\n{regime_signals}\n\n"
     "Cover: (1) regime and what drove it, "
