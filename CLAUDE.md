@@ -15,8 +15,8 @@ The product IS the landing page — no marketing gate, no signup wall. The regim
 
 ## Tech Stack
 - Backend: Python 3.11+, FastAPI, APScheduler
-- Database: PostgreSQL (Railway managed)
-- Frontend: HTML/CSS/JS, Tailwind CSS (CDN), Chart.js (sparklines), TradingView Lightweight Charts v5 (chart page)
+- Database: PostgreSQL (Railway managed), SQLAlchemy async ORM
+- Frontend: HTML/CSS/JS, Tailwind CSS (CDN), Chart.js (sparklines), TradingView Lightweight Charts v5.1 (chart page)
 - Data: Twelve Data Grow tier ($79/mo, 55 credits/min), FRED (free)
 - LLM: Anthropic Claude API (pre-market + after-close summaries)
 - Auth: Email + password, JWT tokens (httpOnly cookies), bcrypt
@@ -29,7 +29,7 @@ Market-Picture/
 │   ├── main.py                  # FastAPI app + routes + static file serving
 │   ├── auth.py                  # Auth routes, JWT, bcrypt, change-password/email
 │   ├── config.py                # Env vars, thresholds, asset lists, regime rules
-│   ├── db.py                    # PostgreSQL setup + SQLAlchemy models (users, watchlists)
+│   ├── db.py                    # PostgreSQL setup + SQLAlchemy models
 │   ├── providers/
 │   │   ├── base.py              # DataProvider abstract interface
 │   │   ├── twelve_data.py       # Twelve Data implementation
@@ -41,7 +41,7 @@ Market-Picture/
 │   ├── services/
 │   │   └── history_cache.py     # On-demand OHLCV fetch, cache, and backfill
 │   ├── jobs/
-│   │   ├── scheduler.py         # APScheduler setup
+│   │   ├── scheduler.py         # APScheduler setup (7 scheduled jobs)
 │   │   └── daily_update.py      # Orchestrates: fetch → compute → summarize → archive
 │   ├── tests/
 │   │   ├── test_regime.py       # Regime classification tests
@@ -57,7 +57,7 @@ Market-Picture/
 │   ├── journal.html             # Narrative archive browser
 │   ├── journal.js               # Journal page logic
 │   ├── about.html               # About page
-│   ├── bradan.html              # Bradán brand page
+│   ├── bradan.html              # Bradán brand/mythology page
 │   ├── nav.js                   # Shared nav bar + search + mobile hamburger
 │   ├── styles.css               # All page styles
 │   └── static/
@@ -78,26 +78,78 @@ Market-Picture/
 - **Equities:** SPY (S&P 500), QQQ (Nasdaq 100), IWM (Russell 2000), VIXY (VIX)
 - **International:** EWJ (Japan), UKX (FTSE 100), FEZ (Euro Stoxx 50), EWH (Hong Kong)
 - **Currencies:** UUP (Dollar Index)
-- **Commodities:** WTI (Crude Oil), UNG (Natural Gas), GLD (Gold), CPER (Copper)
+- **Commodities:** USO (Crude Oil), UNG (Natural Gas), GLD (Gold), CPER (Copper)
 - **Critical Minerals:** URA (Uranium), LIT (Lithium), REMX (Rare Earths)
 - **Crypto:** BTC/USD, ETH/USD
 
 ### FRED:
 - 2Y Treasury yield (DGS2), 10Y Treasury yield (DGS10), 2s10s spread (calculated)
-- IG credit spread, HY credit spread
+- IG credit spread (BAMLC0A0CM), HY credit spread (BAMLH0A0HYM2)
 
 ### On-Demand Symbols (any Twelve Data symbol):
 - Fetched on first search or watchlist add
 - Historical OHLCV cached permanently in PostgreSQL
 - Daily incremental updates for all cached symbols
 
+## Database Tables
+
+| Table | Purpose |
+|-------|---------|
+| `market_snapshots` | Latest price quotes (symbol, price, change_pct, 52-week data, rolling changes) |
+| `daily_history` | OHLCV bars — permanent cache (symbol + date unique constraint) |
+| `summaries` | LLM market summaries (date, period, regime_label, regime_signals_json) |
+| `narrative_archive` | Historical narratives (regime, signals, movers snapshot) |
+| `users` | User accounts (email, password_hash, created_at) |
+| `watchlists` | Saved symbols per user (user_id, symbol, display_order) |
+| `technical_signals` | Technical indicators (RSI-14, ATR-14, SMA-50, SMA-200 per symbol) |
+| `search_cache` | Cached symbol search results |
+
+## API Routes
+
+### Public (main.py)
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/health` | Service health check |
+| GET | `/api/snapshot` | Latest prices for all dashboard assets, grouped by class |
+| GET | `/api/history/{symbol}?range=1Y` | OHLCV history (fetches on demand, caches permanently) |
+| GET | `/api/intraday/{symbol}` | 5-min intraday bars for today |
+| GET | `/api/summary` | Latest regime + narrative |
+| GET | `/api/search/{ticker}` | Live quote lookup via Twelve Data |
+| GET | `/api/narratives?date=YYYY-MM-DD` | Archived narratives for a specific date |
+| GET | `/api/narratives/recent?days=7` | Recent narratives (default 7 days) |
+| GET | `/api/regime-history` | Regime labels for last 90 days |
+| POST | `/api/admin/fetch-now` | Manual trigger: fetch all quotes + run intelligence |
+
+### Auth (auth.py)
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| POST | `/api/auth/register` | Create account, set JWT cookie |
+| POST | `/api/auth/login` | Validate credentials, set JWT cookie |
+| POST | `/api/auth/logout` | Clear auth cookie |
+| GET | `/api/auth/me` | Return current user (id, email) |
+| PUT | `/api/auth/change-password` | Update password (requires current password) |
+| PUT | `/api/auth/change-email` | Update email (requires password), re-issues JWT |
+
+## Scheduled Jobs (7 total, ET timezone)
+
+| Job | Schedule | Purpose |
+|-----|----------|---------|
+| `twelve_data_quotes` | Every 10 min | Fetch quotes for currently-open markets |
+| `fred_quotes` | Mon-Fri 3:30 PM | Fetch FRED series (rates + credit spreads) |
+| `premarket_quotes` | Mon-Fri 7:45 AM | Pre-market refresh with extended hours data |
+| `technical_signals` | Mon-Fri 4:35 PM | Fetch RSI, ATR, SMA for 6 key symbols |
+| `daily_history_append` | Mon-Fri 4:45 PM | Append latest bars for all cached symbols |
+| `premarket_summary` | Mon-Fri 9:45 AM | Claude API morning narrative + archive |
+| `close_summary` | Mon-Fri 4:50 PM | Claude API evening narrative + archive |
+
 ## Data Refresh Schedule
 - Twelve Data (equities, FX, commodities, minerals): every 10 min during market hours
 - Twelve Data (crypto): every 10 min, 24/7
 - Twelve Data (international): every 10 min during respective market hours
 - FRED (rates, credit): once daily ~3:30 PM ET
-- LLM narrative: twice daily (pre-market ~8 AM ET, after close ~4:30 PM ET)
-- Historical cache: daily append for all cached symbols (~4:30 PM ET)
+- LLM narrative: twice daily (pre-market 9:45 AM ET, after close 4:50 PM ET)
+- Technical signals: daily ~4:35 PM ET
+- Historical cache append: daily ~4:45 PM ET
 
 ## Historical Data Strategy: Fetch on Demand, Cache Forever
 Instead of bulk backfilling every symbol, historical daily OHLCV data is fetched the first time any symbol is requested. Once fetched, it's stored permanently. Daily incremental updates keep cached symbols current.
@@ -110,41 +162,41 @@ Instead of bulk backfilling every symbol, historical daily OHLCV data is fetched
 
 **Rate limiting:** Queue backfill requests, never exceed 55 credits/min. Use exponential backoff on 429 errors.
 
-## Narrative Archive
-LLM-generated narratives are stored permanently in the `narrative_archive` table and browsable via the Journal page.
+## Intelligence Pipeline
 
-### Endpoints:
-- `GET /api/narratives?date=YYYY-MM-DD`
-- `GET /api/narratives/recent?days=7`
-- `GET /api/regime-history`
+### Regime Classification (regime.py)
+Five signals evaluated from latest market data:
+1. **spx_trend** — SPY price vs 20-day SMA
+2. **vix** — VIXY daily change (>5% = risk-off, <-5% = risk-on)
+3. **hy_spread** — HY credit spread level + week-over-week widening
+4. **dxy** — UUP daily change (>1% = risk-off)
+5. **gold_vs_equities** — Gold outperforming equities (safe haven signal)
+
+**Aggregation:** Risk-Off >= 2 → RISK-OFF; Risk-On >= 2 AND zero risk-off → RISK-ON; else MIXED
+
+### Narrative Data (narrative_data.py)
+Assembles enriched JSON payload for Claude API: regime classification, per-symbol prices + technicals (RSI, ATR, SMAs, 52-week data), rates, credit spreads, previous narrative context.
+
+### Summary Generation (summary.py)
+Calls Claude API with structured payload from narrative_data. Falls back to plain-text summary prefixed with "[Auto-generated — LLM summary unavailable]" on API failure. Archives narratives with movers snapshot.
 
 ## Chart Page (symbol deep dive)
 When a user searches for or clicks on any symbol, they open a full chart page.
 
 ### Features:
-- TradingView Lightweight Charts v5 (candlestick + line chart toggle)
+- TradingView Lightweight Charts v5.1 (candlestick + line chart toggle)
 - Volume bars (color-coded by candle direction)
-- Moving average overlays: 20-day, 50-day, 200-day (toggleable)
+- Moving average overlays: 20-day, 50-day, 200-day (toggleable, color-coded)
 - RSI (14) in separate synced pane with overbought/oversold lines
 - Time range selector: 1D, 5D, 1M, 3M, 6M, 1Y, 5Y, Max
+- Zoom controls (in/out/reset)
 - Crosshair with OHLC data display
 - Price stats: open, high, low, close, volume, 52-week high/low
+- FRED symbol detection: auto-forces line mode for yield/spread data
 - Back to dashboard navigation
-
-### Chart page API:
-- `GET /api/history/{symbol}?range=1Y&interval=1day` — returns OHLCV array
-- `GET /api/profile/{symbol}` — returns name, exchange, sector, etc.
 
 ## Auth System
 Email + password authentication with JWT tokens stored in httpOnly cookies.
-
-### Endpoints:
-- `POST /api/auth/register` — create account, set JWT cookie
-- `POST /api/auth/login` — validate credentials, set JWT cookie
-- `POST /api/auth/logout` — clear cookie
-- `GET /api/auth/me` — return current user (id, email)
-- `PUT /api/auth/change-password` — update password (requires current password)
-- `PUT /api/auth/change-email` — update email (requires password), re-issues JWT
 
 ### Frontend:
 - Polished auth modal (login/register toggle, close button, logo, password visibility toggle, loading spinner, animations)
@@ -153,12 +205,14 @@ Email + password authentication with JWT tokens stored in httpOnly cookies.
 
 ## Product Pages
 
-### Page 1: The Market Picture (landing page = the product)
-- Hero: Regime badge — big, bold, color-coded
+### Page 1: Dashboard (landing page = the product)
+- Hero: Regime badge — big, bold, color-coded (emerald/red/amber)
 - Sub-hero: One-liner reason for the regime
+- Signal pills with tooltips (S&P Trend, Volatility, Credit Spreads, Dollar, Gold vs Equities)
 - Narrative: Claude-generated daily market story
-- Asset class cards: Prices, change %, expandable charts
-- Today's Movers: Up / Down buckets
+- Period toggle: 1D / 1W / 1M / YTD
+- Asset class sections: Equities, International, Rates, Credit, Currencies, Commodities, Critical Minerals, Crypto
+- Asset cards with prices, change %, explainer tooltips, lazy-loaded sparklines
 - Search bar: Type any symbol → on-demand fetch → chart page
 - No login required
 
@@ -168,49 +222,44 @@ Email + password authentication with JWT tokens stored in httpOnly cookies.
 - No login required
 
 ### Page 3: Journal (narrative archive)
-- Browse past narratives by date
-- Filter by pre-market / after-close
+- Browse past narratives by date or recent (last 30 days)
+- Pre-market / after-close type badges
 - Regime badge + signal pills per entry
+- Narrative text split into paragraphs
 
 ### Page 4: About
 - Project description, how it works, who built it
+- Links to GitHub, LinkedIn, email, Bradán page
+
+### Page 5: Bradán (brand story)
+- Irish mythology of An Bradán Feasa (The Salmon of Knowledge)
+- Embedded YouTube video
+- Connection to the project name
 
 ### Logged-In Features (free account):
 - User account management (change email, change password)
 - Watchlists: Save symbols, personal tab (DB table exists, UI not yet built)
 - Alerts (future): Regime change, VIX spike, price thresholds via email
 
-## v2 Build Order
+## V2 Summary (Complete)
+All V2 phases delivered:
+- Phase 5: PostgreSQL Migration
+- Phase 6: Narrative Archive + Journal page
+- Phase 7: On-Demand Historical Data Cache
+- Phase 8: Chart Page (TradingView Lightweight Charts v5.1)
+- Phase 9: Auth (email/password, JWT, bcrypt, users + watchlists tables)
+- Phase 10: Landing Page Polish + Auth UX (mobile nav, sparkline lazy loading, account management)
 
-### Phase 5: PostgreSQL Migration — DONE
-### Phase 6: Narrative Archive — DONE
-### Phase 7: On-Demand Historical Data Cache — DONE
-### Phase 8: Chart Page + Better Charting — DONE
-### Phase 9: Auth + Watchlists — DONE
-- Users table (id, email, password_hash, created_at)
-- Email + password registration/login
-- JWT token auth (httpOnly cookies)
-- bcrypt password hashing
-- Watchlists table (DB ready, UI not yet built)
-- Frontend: login/register modal
-
-### Phase 10: Landing Page Polish + Auth UX — DONE
-- Mobile hamburger nav (collapsible below 640px)
-- Touch targets (44px nav links, 40px buttons)
-- Sparkline lazy loading (IntersectionObserver)
-- Auth modal polish (close button, logo, password toggle, spinner, animations)
-- User dropdown menu (avatar, account settings, sign out)
-- Account settings modal (change email, change password)
-- Change-password and change-email API endpoints
-
-## What's Next
+## What's Next (V3)
 - Watchlist UI (frontend tab, CRUD endpoints — DB table already exists)
 - Alerts (regime change, VIX spike, price thresholds via email)
 - Further mobile/performance polish
+- Narrative quality improvements
 
 ## Code Conventions
 - Python 3.11+, type hints everywhere
 - Async where appropriate (FastAPI is async-native)
+- SQLAlchemy async ORM for all DB access (PostgreSQL in prod, SQLite locally)
 - Small, single-purpose functions (under 30 lines)
 - DataProvider abstraction: providers/base.py defines the interface
 - Config in config.py or .env, never hardcoded
