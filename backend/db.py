@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Float, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, Float, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -84,7 +84,7 @@ class DailyHistory(Base):
     high: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     low: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     close: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    volume: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    volume: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
 
     __table_args__ = (UniqueConstraint("symbol", "date"),)
 
@@ -356,6 +356,16 @@ async def _run_migrations() -> None:
                 "Watchlist migration skipped or failed — will retry on next startup",
                 exc_info=True,
             )
+        # daily_history: widen volume column from INTEGER to BIGINT (PostgreSQL only)
+        # SQLite uses dynamic typing so this is a no-op there.
+        if get_dialect() == "postgresql":
+            try:
+                await session.execute(
+                    text("ALTER TABLE daily_history ALTER COLUMN volume TYPE BIGINT")
+                )
+                await session.commit()
+            except Exception:
+                await session.rollback()
     finally:
         await session.close()
 
