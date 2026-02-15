@@ -861,7 +861,7 @@
 
 /* Mobile responsive */
 @media (max-width: 640px) {
-  .max-w-4xl {
+  #main-content {
     padding-left: 0.75rem;
     padding-right: 0.75rem;
   }
@@ -1671,8 +1671,16 @@
   width: 120px;
 }
 
-/* Sidebar overlays content — no margin shift, no content squish.
-   Main content stays centered via max-w-4xl mx-auto regardless of sidebar state. */
+/* Sidebar pushes content right — content sits beside sidebar, not under it */
+#main-content {
+  transition: margin-left 0.2s ease;
+}
+body.has-sidebar #main-content {
+  margin-left: 296px;
+}
+body.has-sidebar.sidebar-collapsed #main-content {
+  margin-left: 64px;
+}
 
 /* ── Mobile bottom sheet ──────────────────────────────────────────── */
 
