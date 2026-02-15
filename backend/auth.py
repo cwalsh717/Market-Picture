@@ -42,6 +42,16 @@ class UserResponse(BaseModel):
     created_at: str
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+
+class ChangeEmailRequest(BaseModel):
+    new_email: EmailStr
+    password: str
+
+
 # ---------------------------------------------------------------------------
 # Password helpers
 # ---------------------------------------------------------------------------
@@ -216,3 +226,112 @@ async def me(user: dict = Depends(get_current_user)) -> dict:
         "id": int(user["sub"]),
         "email": user["email"],
     }
+
+
+@router.put("/change-password")
+async def change_password(
+    body: ChangePasswordRequest,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Update the authenticated user's password."""
+    if len(body.new_password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="New password must be at least 8 characters",
+        )
+
+    user_id = int(user["sub"])
+
+    session = await get_session()
+    try:
+        result = await session.execute(
+            text("SELECT id, password_hash FROM users WHERE id = :id"),
+            {"id": user_id},
+        )
+        row = result.mappings().first()
+
+        if row is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if not verify_password(body.current_password, row["password_hash"]):
+            raise HTTPException(
+                status_code=401,
+                detail="Current password is incorrect",
+            )
+
+        new_hash = hash_password(body.new_password)
+        await session.execute(
+            text("UPDATE users SET password_hash = :hash WHERE id = :id"),
+            {"hash": new_hash, "id": user_id},
+        )
+        await session.commit()
+
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception:
+        await session.rollback()
+        logger.exception("Password change failed")
+        raise HTTPException(status_code=500, detail="Password change failed")
+    finally:
+        await session.close()
+
+
+@router.put("/change-email")
+async def change_email(
+    body: ChangeEmailRequest,
+    response: Response,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Update the authenticated user's email and re-issue JWT cookie."""
+    new_email = body.new_email.strip().lower()
+    user_id = int(user["sub"])
+
+    session = await get_session()
+    try:
+        # Fetch current user to verify password
+        result = await session.execute(
+            text("SELECT id, password_hash FROM users WHERE id = :id"),
+            {"id": user_id},
+        )
+        row = result.mappings().first()
+
+        if row is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if not verify_password(body.password, row["password_hash"]):
+            raise HTTPException(
+                status_code=401,
+                detail="Password is incorrect",
+            )
+
+        # Check if new email is already taken
+        existing = await session.execute(
+            text("SELECT id FROM users WHERE email = :email"),
+            {"email": new_email},
+        )
+        if existing.first() is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="An account with this email already exists",
+            )
+
+        await session.execute(
+            text("UPDATE users SET email = :email WHERE id = :id"),
+            {"email": new_email, "id": user_id},
+        )
+        await session.commit()
+
+        # Re-issue JWT cookie with updated email
+        token = create_access_token(user_id, new_email)
+        _set_auth_cookie(response, token)
+
+        return {"status": "ok", "email": new_email}
+    except HTTPException:
+        raise
+    except Exception:
+        await session.rollback()
+        logger.exception("Email change failed")
+        raise HTTPException(status_code=500, detail="Email change failed")
+    finally:
+        await session.close()

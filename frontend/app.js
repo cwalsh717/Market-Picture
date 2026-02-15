@@ -79,6 +79,7 @@ const ASSET_EXPLAINERS = {
 let currentPeriod = "1D";
 const sparklineCache = {};  // { "SYMBOL:1D": bars, ... }
 const sparklineCharts = {}; // { "SYMBOL": Chart instance }
+let sparklineObserver = null; // IntersectionObserver for lazy sparklines
 
 // ---------------------------------------------------------------------------
 // Data fetching
@@ -348,6 +349,60 @@ async function loadAllSparklines(assets, period) {
   }
 }
 
+async function loadSingleSparkline(symbol, period) {
+  const cacheKey = symbol + ":" + period;
+  if (sparklineCache[cacheKey]) {
+    renderSparkline(symbol, sparklineCache[cacheKey]);
+    return;
+  }
+  try {
+    const data = period === "1D"
+      ? await fetchIntraday(symbol)
+      : await fetchHistory(symbol, period);
+    sparklineCache[cacheKey] = data.bars;
+    renderSparkline(symbol, data.bars);
+  } catch (err) {
+    console.warn("Sparkline failed for", symbol, err);
+  }
+}
+
+function setupSparklineLazyLoad(assets, period) {
+  // Disconnect any existing observer
+  if (sparklineObserver) {
+    sparklineObserver.disconnect();
+    sparklineObserver = null;
+  }
+
+  // If IntersectionObserver not supported, fall back to eager loading
+  if (!("IntersectionObserver" in window)) {
+    loadAllSparklines(assets, period);
+    return;
+  }
+
+  sparklineObserver = new IntersectionObserver(function (entries) {
+    var toLoad = [];
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        toLoad.push(entry.target);
+        sparklineObserver.unobserve(entry.target);
+      }
+    });
+
+    if (toLoad.length > 0) {
+      toLoad.forEach(function (canvas) {
+        var symbol = canvas.dataset.symbol;
+        if (symbol) {
+          loadSingleSparkline(symbol, period);
+        }
+      });
+    }
+  }, { rootMargin: "200px" });
+
+  document.querySelectorAll(".sparkline-container canvas").forEach(function (canvas) {
+    sparklineObserver.observe(canvas);
+  });
+}
+
 
 // ---------------------------------------------------------------------------
 // Interactions
@@ -360,7 +415,7 @@ function initPeriodToggle(assets) {
       buttons.forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       currentPeriod = btn.dataset.period;
-      loadAllSparklines(assets, currentPeriod);
+      setupSparklineLazyLoad(assets, currentPeriod);
     });
   });
 }
@@ -458,9 +513,9 @@ async function init() {
     footerEl.classList.remove("hidden");
   }
 
-  // Load sparklines asynchronously (progressive)
+  // Load sparklines lazily (only when visible in viewport)
   if (assets) {
-    loadAllSparklines(assets, currentPeriod);
+    setupSparklineLazyLoad(assets, currentPeriod);
   }
 }
 

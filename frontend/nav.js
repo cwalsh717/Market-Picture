@@ -26,6 +26,9 @@
     return "";
   }
 
+  var HAMBURGER_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>';
+  var CLOSE_SVG = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+
   function buildNav() {
     const container = document.getElementById("main-nav");
     if (!container) return;
@@ -40,35 +43,68 @@
 
     container.innerHTML = `
       <div class="nav-inner">
-        <div class="nav-left">
+        <div class="nav-top-row">
           <a href="/" class="nav-logo"><img src="/static/bradan-logo.jpg" alt="" class="nav-logo-img" onerror="this.style.display='none'">Bradán</a>
+          <div class="nav-search">
+            <input
+              id="nav-search-input"
+              type="text"
+              placeholder="Search ticker\u2026"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <div id="nav-search-spinner" class="nav-search-spinner hidden">
+              <svg class="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+            </div>
+            <div id="nav-search-dropdown" class="nav-search-dropdown hidden"></div>
+          </div>
+          <button class="nav-hamburger" id="nav-hamburger" aria-label="Toggle menu">${HAMBURGER_SVG}</button>
+        </div>
+        <div class="nav-collapse" id="nav-collapse">
           <div class="nav-links">
             <a href="/" class="${linkClass("dashboard")}">Dashboard</a>
             <a href="/chart.html" class="${linkClass("chart")}">Chart</a>
             <a href="/journal.html" class="${linkClass("journal")}">Journal</a>
             <a href="/about.html" class="${linkClass("about")}">About</a>
           </div>
-        </div>
-        <div class="nav-search">
-          <input
-            id="nav-search-input"
-            type="text"
-            placeholder="Search ticker\u2026"
-            autocomplete="off"
-            spellcheck="false"
-          />
-          <div id="nav-search-spinner" class="nav-search-spinner hidden">
-            <svg class="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-            </svg>
-          </div>
-          <div id="nav-search-dropdown" class="nav-search-dropdown hidden"></div>
+          <div id="nav-auth-slot"></div>
         </div>
       </div>
     `;
 
     wireSearch();
+    wireHamburger();
+  }
+
+  function wireHamburger() {
+    var btn = document.getElementById("nav-hamburger");
+    var collapse = document.getElementById("nav-collapse");
+    if (!btn || !collapse) return;
+
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      var isOpen = collapse.classList.toggle("open");
+      btn.innerHTML = isOpen ? CLOSE_SVG : HAMBURGER_SVG;
+    });
+
+    // Close menu when a nav link inside collapse is clicked
+    collapse.addEventListener("click", function (e) {
+      if (e.target.closest(".nav-link")) {
+        collapse.classList.remove("open");
+        btn.innerHTML = HAMBURGER_SVG;
+      }
+    });
+
+    // Close menu when tapping outside
+    document.addEventListener("click", function (e) {
+      if (!e.target.closest("#main-nav")) {
+        collapse.classList.remove("open");
+        btn.innerHTML = HAMBURGER_SVG;
+      }
+    });
   }
 
   /* ── Dropdown helpers ─────────────────────────────────────────────────── */
