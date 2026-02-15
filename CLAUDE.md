@@ -18,7 +18,7 @@ The product IS the landing page — no marketing gate, no signup wall. The regim
 - Database: PostgreSQL (Railway managed), SQLAlchemy async ORM
 - Frontend: HTML/CSS/JS, Tailwind CSS (CDN), Chart.js (sparklines), TradingView Lightweight Charts v5.1 (chart page)
 - Data: Twelve Data Grow tier ($79/mo, 55 credits/min), FRED (free)
-- LLM: Anthropic Claude API (pre-market + after-close summaries)
+- LLM: Anthropic Claude API (pre-market + after-close summaries, on-demand company analysis)
 - Auth: Email + password, JWT tokens (httpOnly cookies), bcrypt
 - Hosting: Railway (auto-deploys on push to main)
 
@@ -37,28 +37,34 @@ Market-Picture/
 │   ├── intelligence/
 │   │   ├── regime.py            # Regime classification (rule-based, 5 signals)
 │   │   ├── narrative_data.py    # Structured data pipeline for LLM prompts
-│   │   └── summary.py           # Claude API summaries + narrative archive writes
+│   │   ├── summary.py           # Claude API summaries + narrative archive writes
+│   │   └── company_analysis.py  # On-demand per-symbol Claude analysis
 │   ├── services/
 │   │   └── history_cache.py     # On-demand OHLCV fetch, cache, and backfill
 │   ├── jobs/
 │   │   ├── scheduler.py         # APScheduler setup (7 scheduled jobs)
 │   │   └── daily_update.py      # Orchestrates: fetch → compute → summarize → archive
+│   ├── watchlist.py               # Watchlist CRUD API + company analysis endpoint
 │   ├── tests/
 │   │   ├── test_regime.py       # Regime classification tests
 │   │   ├── test_summary.py      # Summary/narrative tests
-│   │   └── test_data_pipeline.py # Data pipeline tests
+│   │   ├── test_data_pipeline.py # Data pipeline tests
+│   │   └── test_watchlist.py    # Watchlist CRUD + schema tests
 │   └── requirements.txt
 ├── frontend/
 │   ├── index.html               # Main dashboard (the landing page)
 │   ├── app.js                   # Dashboard logic (regime, cards, lazy sparklines)
-│   ├── auth.js                  # Auth modal, user dropdown, account settings
+│   ├── auth.js                  # Auth modal, user dropdown, account settings + global auth state
+│   ├── sidebar.js               # Persistent watchlist sidebar (desktop) + bottom sheet (mobile)
+│   ├── watchlist.html           # Watchlist management page
+│   ├── watchlist.js             # Watchlist page logic (search/add, reorder, analysis)
 │   ├── chart.html               # Symbol deep-dive chart page
-│   ├── chart.js                 # TradingView Lightweight Charts logic
+│   ├── chart.js                 # TradingView Lightweight Charts logic + watchlist star
 │   ├── journal.html             # Narrative archive browser
 │   ├── journal.js               # Journal page logic
 │   ├── about.html               # About page
 │   ├── bradan.html              # Bradán brand/mythology page
-│   ├── nav.js                   # Shared nav bar + search + mobile hamburger
+│   ├── nav.js                   # Shared nav bar + search + watchlist star + mobile hamburger
 │   ├── styles.css               # All page styles
 │   └── static/
 │       └── bradan-logo.jpg      # Logo image
@@ -100,8 +106,9 @@ Market-Picture/
 | `summaries` | LLM market summaries (date, period, regime_label, regime_signals_json) |
 | `narrative_archive` | Historical narratives (regime, signals, movers snapshot) |
 | `users` | User accounts (email, password_hash, created_at) |
-| `watchlists` | Saved symbols per user (user_id, symbol, display_order) |
+| `watchlists` | Saved symbols per user (user_id, symbol, display_order) — unique on (user_id, symbol) |
 | `technical_signals` | Technical indicators (RSI-14, ATR-14, SMA-50, SMA-200 per symbol) |
+| `company_analyses` | Cached per-symbol Claude analyses (symbol, user_id, date) — unique on (symbol, user_id, date) |
 | `search_cache` | Cached symbol search results |
 
 ## API Routes
@@ -129,6 +136,15 @@ Market-Picture/
 | GET | `/api/auth/me` | Return current user (id, email) |
 | PUT | `/api/auth/change-password` | Update password (requires current password) |
 | PUT | `/api/auth/change-email` | Update email (requires password), re-issues JWT |
+
+### Watchlist (watchlist.py) — all require auth
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/watchlist` | List user's watchlist with latest prices |
+| POST | `/api/watchlist` | Add symbol (409 on duplicate, 400 at max size) |
+| DELETE | `/api/watchlist/{symbol}` | Remove symbol (404 if not found) |
+| PUT | `/api/watchlist/reorder` | Bulk update display_order |
+| POST | `/api/watchlist/{symbol}/analysis` | Generate on-demand Claude company analysis (cached per day) |
 
 ## Scheduled Jobs (7 total, ET timezone)
 
@@ -180,6 +196,9 @@ Assembles enriched JSON payload for Claude API: regime classification, per-symbo
 ### Summary Generation (summary.py)
 Calls Claude API with structured payload from narrative_data. Falls back to plain-text summary prefixed with "[Auto-generated — LLM summary unavailable]" on API failure. Archives narratives with movers snapshot.
 
+### Company Analysis (company_analysis.py)
+On-demand, per-symbol Claude analysis. Assembles payload (latest snapshot + technicals + current regime) and generates a focused briefing: Current Position, Technical Picture, Context. Under 150 words, facts only. Cached per (symbol, user_id, date) in `company_analyses` table. Will be enriched with fundamentals data in Phase 12.
+
 ## Chart Page (symbol deep dive)
 When a user searches for or clicks on any symbol, they open a full chart page.
 
@@ -194,6 +213,7 @@ When a user searches for or clicks on any symbol, they open a full chart page.
 - Price stats: open, high, low, close, volume, 52-week high/low
 - FRED symbol detection: auto-forces line mode for yield/spread data
 - Back to dashboard navigation
+- Watchlist star button (add/remove from watchlist when logged in)
 
 ## Auth System
 Email + password authentication with JWT tokens stored in httpOnly cookies.
@@ -213,8 +233,10 @@ Email + password authentication with JWT tokens stored in httpOnly cookies.
 - Period toggle: 1D / 1W / 1M / YTD
 - Asset class sections: Equities, International, Rates, Credit, Currencies, Commodities, Critical Minerals, Crypto
 - Asset cards with prices, change %, explainer tooltips, lazy-loaded sparklines
-- Search bar: Type any symbol → on-demand fetch → chart page
-- No login required
+- Search bar: Type any symbol → on-demand fetch → chart page (with watchlist star when logged in)
+- Persistent watchlist sidebar (desktop, logged in only): collapsible (280px/48px), per-symbol price/change rows
+- Mobile watchlist bottom sheet (logged in only): floating button → slide-up drawer
+- No login required for core content
 
 ### Page 2: Chart Page (symbol deep dive)
 - Full candlestick chart with all analysis tools
@@ -236,9 +258,17 @@ Email + password authentication with JWT tokens stored in httpOnly cookies.
 - Embedded YouTube video
 - Connection to the project name
 
+### Page 6: Watchlist (logged-in feature)
+- Logged-out: CTA card explaining the feature + sign-in button
+- Logged-in: Search/add bar, per-symbol cards (price, change%, reorder arrows, remove)
+- "Generate Analysis" per symbol → on-demand Claude company analysis (cached daily)
+- Reorder via up/down arrows (persisted via API)
+
 ### Logged-In Features (free account):
 - User account management (change email, change password)
-- Watchlists: Save symbols, personal tab (DB table exists, UI not yet built)
+- Watchlists: Save symbols from search dropdown, chart page, or watchlist page
+- Persistent sidebar (desktop) / bottom sheet (mobile) showing watchlist on dashboard
+- On-demand Claude company analysis per watchlist symbol
 - Alerts (future): Regime change, VIX spike, price thresholds via email
 
 ## V2 Summary (Complete)
@@ -250,25 +280,23 @@ All V2 phases delivered:
 - Phase 9: Auth (email/password, JWT, bcrypt, users + watchlists tables)
 - Phase 10: Landing Page Polish + Auth UX (mobile nav, sparkline lazy loading, account management)
 
-## V3 Roadmap — Functional Tools for Users
+## V3 Progress
 
-V2 built the framework (data, regime, narratives, charts, auth). V3 is about giving logged-in users real tools they can act on.
-
-### Phase 11: Watchlists
+### Phase 11: Watchlists (Complete)
 The first logged-in feature. Users save symbols and get a personalized view of their portfolio.
 
-**Two surfaces:**
-- **Dashboard widget** — Compact watchlist strip on the main dashboard (visible when logged in). Quick glance at your basket: symbol, price, change %.
-- **Dedicated watchlist page** — Full watchlist view with more depth per symbol. LLM-generated basket report: how your holdings are moving, cross-correlations, notable news across your watchlist.
+**What was built:**
+- **Backend:** Watchlist CRUD API (add, remove, reorder, list with price join), on-demand Claude company analysis with daily caching per (symbol, user_id, date), unique constraint on watchlists, new CompanyAnalysis model
+- **Dashboard sidebar:** Persistent collapsible sidebar on desktop (280px expanded / 48px collapsed, localStorage-persisted), mobile bottom sheet with floating trigger button
+- **Watchlist page:** Dedicated management page with search/add, per-symbol cards, reorder arrows, "Generate Analysis" button for Claude company briefings
+- **Add-to-watchlist UI:** Star buttons on search dropdown and chart page header (toggle add/remove)
+- **Auth state:** Global `window.bradanUser` + `bradan-auth-ready` custom event for cross-module auth detection
+- **Nav:** Watchlist link always visible (CTA for logged-out users)
+- **Tests:** 27 new tests (125 total), zero regressions
 
-**Backend:**
-- CRUD endpoints for watchlist (add, remove, reorder — DB table already exists)
-- LLM basket summary: Claude generates a narrative about the user's specific watchlist holdings
+**Note:** Company analysis prompt currently uses snapshot + technicals + regime context. Will be enriched with fundamentals data when Phase 12 adds financial data APIs.
 
-**Frontend:**
-- Dashboard: logged-in users see their watchlist widget above/below the regime hero
-- Watchlist page: full basket view, per-symbol cards, LLM basket report
-- Add/remove symbols from search results and chart page
+## V3 Roadmap — Remaining Phases
 
 ### Phase 12: Stock Profile Page (Chart Page Rework)
 Rename and reimagine the chart page. Currently it's just a chart — it should be a full equity profile like Yahoo Finance, Finviz, or thinkorswim. The chart is one section, not the whole page.
