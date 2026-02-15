@@ -1,4 +1,4 @@
-# Market Picture
+# Bradán — Daily Market Intelligence
 
 ## What This Is
 A daily market weather report. Open it, see the regime (Risk-On / Risk-Off / Mixed), read a plain-English narrative about what's happening across asset classes, and go on with your day. 30 seconds. Like checking the weather, but for markets.
@@ -15,43 +15,55 @@ The product IS the landing page — no marketing gate, no signup wall. The regim
 
 ## Tech Stack
 - Backend: Python 3.11+, FastAPI, APScheduler
-- Database: SQLite → **migrating to PostgreSQL** (Railway managed)
-- Frontend: HTML/CSS/JS, Tailwind CSS, Chart.js → **migrating to TradingView Lightweight Charts v5**
+- Database: PostgreSQL (Railway managed)
+- Frontend: HTML/CSS/JS, Tailwind CSS (CDN), Chart.js (sparklines), TradingView Lightweight Charts v5 (chart page)
 - Data: Twelve Data Grow tier ($79/mo, 55 credits/min), FRED (free)
 - LLM: Anthropic Claude API (pre-market + after-close summaries)
-- Auth: **Email + password, JWT tokens, bcrypt** (not yet built)
+- Auth: Email + password, JWT tokens (httpOnly cookies), bcrypt
 - Hosting: Railway (auto-deploys on push to main)
 
 ## Project Structure
 ```
 Market-Picture/
 ├── backend/
-│   ├── main.py                  # FastAPI app + routes
+│   ├── main.py                  # FastAPI app + routes + static file serving
+│   ├── auth.py                  # Auth routes, JWT, bcrypt, change-password/email
 │   ├── config.py                # Env vars, thresholds, asset lists, regime rules
-│   ├── db.py                    # Database setup + models (migrating to PostgreSQL)
+│   ├── db.py                    # PostgreSQL setup + SQLAlchemy models (users, watchlists)
 │   ├── providers/
 │   │   ├── base.py              # DataProvider abstract interface
 │   │   ├── twelve_data.py       # Twelve Data implementation
 │   │   └── fred.py              # FRED implementation
 │   ├── intelligence/
-│   │   ├── regime.py            # Regime classification (rule-based)
+│   │   ├── regime.py            # Regime classification (rule-based, 5 signals)
+│   │   ├── narrative_data.py    # Structured data pipeline for LLM prompts
 │   │   └── summary.py           # Claude API summaries + narrative archive writes
 │   ├── services/
 │   │   └── history_cache.py     # On-demand OHLCV fetch, cache, and backfill
 │   ├── jobs/
 │   │   ├── scheduler.py         # APScheduler setup
 │   │   └── daily_update.py      # Orchestrates: fetch → compute → summarize → archive
+│   ├── tests/
+│   │   ├── test_regime.py       # Regime classification tests
+│   │   ├── test_summary.py      # Summary/narrative tests
+│   │   └── test_data_pipeline.py # Data pipeline tests
 │   └── requirements.txt
 ├── frontend/
 │   ├── index.html               # Main dashboard (the landing page)
-│   ├── app.js                   # Dashboard logic (regime, cards, sparklines)
+│   ├── app.js                   # Dashboard logic (regime, cards, lazy sparklines)
+│   ├── auth.js                  # Auth modal, user dropdown, account settings
 │   ├── chart.html               # Symbol deep-dive chart page
 │   ├── chart.js                 # TradingView Lightweight Charts logic
 │   ├── journal.html             # Narrative archive browser
 │   ├── journal.js               # Journal page logic
 │   ├── about.html               # About page
-│   ├── nav.js                   # Shared navigation bar + search
-│   └── styles.css               # All page styles
+│   ├── bradan.html              # Bradán brand page
+│   ├── nav.js                   # Shared nav bar + search + mobile hamburger
+│   ├── styles.css               # All page styles
+│   └── static/
+│       └── bradan-logo.jpg      # Logo image
+├── scripts/
+│   └── e2e_pipeline_test.py     # End-to-end pipeline test
 ├── .env                         # Local API keys (gitignored)
 ├── .gitignore
 ├── .dockerignore
@@ -98,29 +110,15 @@ Instead of bulk backfilling every symbol, historical daily OHLCV data is fetched
 
 **Rate limiting:** Queue backfill requests, never exceed 55 credits/min. Use exponential backoff on 429 errors.
 
-## Narrative Archive (CRITICAL — must be built)
-LLM-generated narratives are currently ephemeral — overwritten each cycle. Every narrative must be stored permanently.
+## Narrative Archive
+LLM-generated narratives are stored permanently in the `narrative_archive` table and browsable via the Journal page.
 
-### Schema:
-```sql
-CREATE TABLE narrative_archive (
-    id SERIAL PRIMARY KEY,
-    timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    date DATE NOT NULL,
-    narrative_type VARCHAR(20) NOT NULL,  -- 'pre_market' or 'after_close'
-    regime_label VARCHAR(20) NOT NULL,    -- 'risk_on', 'risk_off', 'mixed'
-    narrative_text TEXT NOT NULL,
-    signal_inputs JSONB,                  -- S&P trend, VIX, spreads, DXY, gold vs equities
-    movers_snapshot JSONB,                -- up/down buckets with symbols and % changes
-);
-```
-
-### Endpoints needed:
+### Endpoints:
 - `GET /api/narratives?date=YYYY-MM-DD`
 - `GET /api/narratives/recent?days=7`
 - `GET /api/regime-history`
 
-## Chart Page (NEW — symbol deep dive)
+## Chart Page (symbol deep dive)
 When a user searches for or clicks on any symbol, they open a full chart page.
 
 ### Features:
@@ -131,13 +129,27 @@ When a user searches for or clicks on any symbol, they open a full chart page.
 - Time range selector: 1D, 5D, 1M, 3M, 6M, 1Y, 5Y, Max
 - Crosshair with OHLC data display
 - Price stats: open, high, low, close, volume, 52-week high/low
-- Add to Watchlist button
-- Company/asset info panel
 - Back to dashboard navigation
 
-### Chart page API needs:
+### Chart page API:
 - `GET /api/history/{symbol}?range=1Y&interval=1day` — returns OHLCV array
 - `GET /api/profile/{symbol}` — returns name, exchange, sector, etc.
+
+## Auth System
+Email + password authentication with JWT tokens stored in httpOnly cookies.
+
+### Endpoints:
+- `POST /api/auth/register` — create account, set JWT cookie
+- `POST /api/auth/login` — validate credentials, set JWT cookie
+- `POST /api/auth/logout` — clear cookie
+- `GET /api/auth/me` — return current user (id, email)
+- `PUT /api/auth/change-password` — update password (requires current password)
+- `PUT /api/auth/change-email` — update email (requires password), re-issues JWT
+
+### Frontend:
+- Polished auth modal (login/register toggle, close button, logo, password visibility toggle, loading spinner, animations)
+- User dropdown menu when logged in (avatar circle, account settings, sign out)
+- Account settings modal (change email, change password with inline feedback)
 
 ## Product Pages
 
@@ -155,8 +167,17 @@ When a user searches for or clicks on any symbol, they open a full chart page.
 - Reached via search or clicking any symbol
 - No login required
 
-### Logged-In Features (free account, not yet built):
-- Watchlists: Save symbols, personal tab
+### Page 3: Journal (narrative archive)
+- Browse past narratives by date
+- Filter by pre-market / after-close
+- Regime badge + signal pills per entry
+
+### Page 4: About
+- Project description, how it works, who built it
+
+### Logged-In Features (free account):
+- User account management (change email, change password)
+- Watchlists: Save symbols, personal tab (DB table exists, UI not yet built)
 - Alerts (future): Regime change, VIX spike, price thresholds via email
 
 ## v2 Build Order
@@ -165,18 +186,27 @@ When a user searches for or clicks on any symbol, they open a full chart page.
 ### Phase 6: Narrative Archive — DONE
 ### Phase 7: On-Demand Historical Data Cache — DONE
 ### Phase 8: Chart Page + Better Charting — DONE
-
-### Phase 9: Auth + Watchlists
+### Phase 9: Auth + Watchlists — DONE
 - Users table (id, email, password_hash, created_at)
 - Email + password registration/login
 - JWT token auth (httpOnly cookies)
 - bcrypt password hashing
-- Watchlists table + CRUD endpoints
-- Frontend: login/register modal, watchlist tab
+- Watchlists table (DB ready, UI not yet built)
+- Frontend: login/register modal
 
-### Phase 10: Landing Page Polish
-- Mobile optimization pass
-- Performance tuning
+### Phase 10: Landing Page Polish + Auth UX — DONE
+- Mobile hamburger nav (collapsible below 640px)
+- Touch targets (44px nav links, 40px buttons)
+- Sparkline lazy loading (IntersectionObserver)
+- Auth modal polish (close button, logo, password toggle, spinner, animations)
+- User dropdown menu (avatar, account settings, sign out)
+- Account settings modal (change email, change password)
+- Change-password and change-email API endpoints
+
+## What's Next
+- Watchlist UI (frontend tab, CRUD endpoints — DB table already exists)
+- Alerts (regime change, VIX spike, price thresholds via email)
+- Further mobile/performance polish
 
 ## Code Conventions
 - Python 3.11+, type hints everywhere
