@@ -378,6 +378,7 @@ async def narratives(date: str = Query(..., description="Date in YYYY-MM-DD form
         "narratives": [
             {
                 "timestamp": row["timestamp"],
+                "date": date,
                 "narrative_type": row["narrative_type"],
                 "regime_label": row["regime_label"],
                 "narrative_text": row["narrative_text"],

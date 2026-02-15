@@ -24,7 +24,11 @@ _session_factory: Optional[async_sessionmaker[AsyncSession]] = None
 
 
 def _build_url() -> str:
-    """Determine async database URL from environment."""
+    """Determine async database URL from environment.
+
+    Converts standard dialect URLs to their async equivalents so that
+    ``create_async_engine`` receives a valid driver string.
+    """
     from backend.config import DATABASE_URL, DATABASE_PATH
 
     if DATABASE_URL:
@@ -33,6 +37,8 @@ def _build_url() -> str:
             return url.replace("postgresql://", "postgresql+asyncpg://", 1)
         if url.startswith("postgres://"):
             return url.replace("postgres://", "postgresql+asyncpg://", 1)
+        if url.startswith("sqlite:///") and "+aiosqlite" not in url:
+            return url.replace("sqlite:///", "sqlite+aiosqlite:///", 1)
         return url
 
     # Fallback to SQLite for local dev
@@ -151,8 +157,9 @@ async def init_db(url: Optional[str] = None) -> None:
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    dialect = _engine.dialect.name
     safe_url = actual_url.split("@")[-1] if "@" in actual_url else actual_url
-    logger.info("Database initialized: %s", safe_url)
+    logger.info("Database initialized (%s): %s", dialect, safe_url)
 
 
 async def get_session() -> AsyncSession:

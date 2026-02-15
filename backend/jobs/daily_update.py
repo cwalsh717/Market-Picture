@@ -231,6 +231,62 @@ async def fetch_fred_quotes(provider: FredProvider) -> None:
     logger.info("FRED: fetched %d quotes, saved %d rows", len(quotes), saved)
 
 
+async def _save_summary_and_archive(
+    period: str,
+    narrative_type: str,
+    regime: dict,
+    summary_text: str,
+) -> None:
+    """Save to both summaries and narrative_archive tables.
+
+    The summaries INSERT is committed first so a failure in the archive
+    write cannot roll back the summary.  Each write uses its own session.
+    """
+    today = datetime.now(_ET).date().isoformat()
+
+    # 1. Write to summaries (must not be lost)
+    session = await get_session()
+    try:
+        await session.execute(
+            text("""
+                INSERT INTO summaries
+                    (date, period, summary_text, regime_label, regime_reason,
+                     regime_signals_json)
+                VALUES (:date, :period, :summary_text, :regime_label, :regime_reason,
+                        :regime_signals_json)
+            """),
+            {
+                "date": today,
+                "period": period,
+                "summary_text": summary_text,
+                "regime_label": regime["label"],
+                "regime_reason": regime["reason"],
+                "regime_signals_json": json.dumps(regime["signals"]),
+            },
+        )
+        await session.commit()
+        logger.info("Saved %s summary for %s", period, today)
+    except Exception:
+        logger.exception("Failed to save %s summary for %s", period, today)
+        await session.rollback()
+        return  # no point archiving if the summary itself failed
+    finally:
+        await session.close()
+
+    # 2. Write to narrative_archive (separate transaction)
+    session = await get_session()
+    try:
+        movers = await _compute_movers_snapshot(session)
+        await _archive_narrative(session, narrative_type, regime, summary_text, movers)
+        await session.commit()
+        logger.info("Archived %s narrative for %s", narrative_type, today)
+    except Exception:
+        logger.exception("Failed to archive %s narrative for %s", narrative_type, today)
+        await session.rollback()
+    finally:
+        await session.close()
+
+
 async def generate_premarket_summary() -> None:
     """Generate the pre-market LLM summary (~8:00 AM ET).
 
@@ -245,39 +301,16 @@ async def generate_premarket_summary() -> None:
     session = await get_session()
     try:
         regime = await classify_regime(session)
-
-        summary = await generate_premarket(regime)
-        logger.info("Pre-market regime: %s | %s", regime["label"], regime["reason"])
-
-        today = datetime.now(_ET).date().isoformat()
-
-        await session.execute(
-            text("""
-                INSERT INTO summaries
-                    (date, period, summary_text, regime_label, regime_reason,
-                     regime_signals_json)
-                VALUES (:date, :period, :summary_text, :regime_label, :regime_reason,
-                        :regime_signals_json)
-            """),
-            {
-                "date": today,
-                "period": "premarket",
-                "summary_text": summary["summary_text"],
-                "regime_label": regime["label"],
-                "regime_reason": regime["reason"],
-                "regime_signals_json": json.dumps(regime["signals"]),
-            },
-        )
-
-        movers = await _compute_movers_snapshot(session)
-        await _archive_narrative(session, "pre_market", regime, summary["summary_text"], movers)
-
-        await session.commit()
     except Exception:
-        logger.exception("Failed to generate premarket summary")
-        await session.rollback()
+        logger.exception("Failed to classify regime for premarket summary")
+        return
     finally:
         await session.close()
+
+    summary = await generate_premarket(regime)
+    logger.info("Pre-market regime: %s | %s", regime["label"], regime["reason"])
+
+    await _save_summary_and_archive("premarket", "pre_market", regime, summary["summary_text"])
 
 
 async def generate_close_summary() -> None:
@@ -294,36 +327,13 @@ async def generate_close_summary() -> None:
     session = await get_session()
     try:
         regime = await classify_regime(session)
-        logger.info("Regime: %s | %s", regime["label"], regime["reason"])
-
-        summary = await generate_close(regime)
-
-        today = datetime.now(_ET).date().isoformat()
-
-        await session.execute(
-            text("""
-                INSERT INTO summaries
-                    (date, period, summary_text, regime_label, regime_reason,
-                     regime_signals_json)
-                VALUES (:date, :period, :summary_text, :regime_label, :regime_reason,
-                        :regime_signals_json)
-            """),
-            {
-                "date": today,
-                "period": "close",
-                "summary_text": summary["summary_text"],
-                "regime_label": regime["label"],
-                "regime_reason": regime["reason"],
-                "regime_signals_json": json.dumps(regime["signals"]),
-            },
-        )
-
-        movers = await _compute_movers_snapshot(session)
-        await _archive_narrative(session, "after_close", regime, summary["summary_text"], movers)
-
-        await session.commit()
     except Exception:
-        logger.exception("Failed to generate close summary")
-        await session.rollback()
+        logger.exception("Failed to classify regime for close summary")
+        return
     finally:
         await session.close()
+
+    summary = await generate_close(regime)
+    logger.info("Regime: %s | %s", regime["label"], regime["reason"])
+
+    await _save_summary_and_archive("close", "after_close", regime, summary["summary_text"])
