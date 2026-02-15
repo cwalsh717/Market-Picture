@@ -1669,16 +1669,8 @@
   width: 120px;
 }
 
-/* Sidebar pushes content — smooth margin transition */
-#main-content {
-  transition: margin-left 0.2s ease;
-}
-body.has-sidebar #main-content {
-  margin-left: 280px;
-}
-body.has-sidebar.sidebar-collapsed #main-content {
-  margin-left: 48px;
-}
+/* Sidebar overlays content — no margin shift, no content squish.
+   Main content stays centered via max-w-4xl mx-auto regardless of sidebar state. */
 
 /* ── Mobile bottom sheet ──────────────────────────────────────────── */
 
@@ -1753,6 +1745,7 @@ body.has-sidebar.sidebar-collapsed #main-content {
 
 @media (max-width: 640px) {
   .sidebar { display: none !important; }
+  /* Safety fallback: ensure no margin-left on mobile regardless of body classes */
   body.has-sidebar #main-content,
   body.has-sidebar.sidebar-collapsed #main-content {
     margin-left: 0;
