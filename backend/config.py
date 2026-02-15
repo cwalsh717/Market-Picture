@@ -27,6 +27,11 @@ JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "10080"))  # 7 day
 COOKIE_SECURE: bool = os.getenv("COOKIE_SECURE", "true").lower() == "true"
 
 # ---------------------------------------------------------------------------
+# Watchlist
+# ---------------------------------------------------------------------------
+WATCHLIST_MAX_SIZE: int = 50
+
+# ---------------------------------------------------------------------------
 # Market hours (all times in ET, 24-hour format)
 # ---------------------------------------------------------------------------
 MARKET_HOURS: dict[str, dict[str, str]] = {

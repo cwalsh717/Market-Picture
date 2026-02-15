@@ -21,6 +21,7 @@
     const path = window.location.pathname;
     if (path === "/" || path === "/index.html") return "dashboard";
     if (path === "/chart.html") return "chart";
+    if (path === "/watchlist.html") return "watchlist";
     if (path === "/journal.html") return "journal";
     if (path === "/about.html") return "about";
     return "";
@@ -66,6 +67,7 @@
         <div class="nav-collapse" id="nav-collapse">
           <div class="nav-links">
             <a href="/" class="${linkClass("dashboard")}">Dashboard</a>
+            <a href="/watchlist.html" class="${linkClass("watchlist")}">Watchlist</a>
             <a href="/chart.html" class="${linkClass("chart")}">Chart</a>
             <a href="/journal.html" class="${linkClass("journal")}">Journal</a>
             <a href="/about.html" class="${linkClass("about")}">About</a>
@@ -121,19 +123,48 @@
     var dd = document.getElementById("nav-search-dropdown");
     if (!dd) return;
 
+    var starBtn = window.bradanUser
+      ? '<button class="nav-search-star" data-symbol="' + escapeHtml(symbol) + '" title="Add to watchlist">&#9734;</button>'
+      : '';
+
     dd.innerHTML =
-      '<div class="nav-search-dropdown-item" data-symbol="' +
-      escapeHtml(symbol) +
-      '">' +
-      '<span style="font-weight:600;">' + escapeHtml(symbol) + '</span>' +
-      '<span style="color:#6b7280;">Go to chart</span>' +
+      '<div class="nav-search-dropdown-item" data-symbol="' + escapeHtml(symbol) + '">' +
+        '<span style="font-weight:600;">' + escapeHtml(symbol) + '</span>' +
+        '<span style="display:flex;gap:0.5rem;align-items:center;">' +
+          starBtn +
+          '<span style="color:#6b7280;">Go to chart &#8250;</span>' +
+        '</span>' +
       '</div>';
     dd.classList.remove("hidden");
 
-    dd.querySelector(".nav-search-dropdown-item").addEventListener("click", function () {
+    // Wire chart navigation - clicking the item (but not the star) goes to chart
+    dd.querySelector(".nav-search-dropdown-item").addEventListener("click", function (e) {
+      if (e.target.closest(".nav-search-star")) return; // don't navigate on star click
       hideDropdown();
       window.location.href = "/chart.html?symbol=" + encodeURIComponent(symbol);
     });
+
+    // Wire star button
+    var star = dd.querySelector(".nav-search-star");
+    if (star) {
+      star.addEventListener("click", async function (e) {
+        e.stopPropagation();
+        try {
+          var resp = await fetch("/api/watchlist", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ symbol: symbol }),
+          });
+          if (resp.ok || resp.status === 409) {
+            star.innerHTML = "&#9733;"; // filled star
+            star.classList.add("active");
+          }
+        } catch (err) {
+          console.error("Failed to add to watchlist:", err);
+        }
+      });
+    }
   }
 
   function showDropdownEmpty(query) {

@@ -140,6 +140,21 @@ class Watchlist(Base):
     added_at: Mapped[str] = mapped_column(String, nullable=False)
     display_order: Mapped[int] = mapped_column(Integer, default=0)
 
+    __table_args__ = (UniqueConstraint("user_id", "symbol"),)
+
+
+class CompanyAnalysis(Base):
+    __tablename__ = "company_analyses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    symbol: Mapped[str] = mapped_column(String, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    date: Mapped[str] = mapped_column(String, nullable=False)
+    analysis_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+
+    __table_args__ = (UniqueConstraint("symbol", "user_id", "date"),)
+
 
 class TechnicalSignal(Base):
     __tablename__ = "technical_signals"
@@ -242,6 +257,42 @@ async def _run_migrations() -> None:
         try:
             await session.execute(
                 text("ALTER TABLE summaries ADD COLUMN regime_signals_json TEXT")
+            )
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+        # watchlists: unique constraint (user_id, symbol)
+        try:
+            await session.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uix_watchlists_user_symbol "
+                    "ON watchlists (user_id, symbol)"
+                )
+            )
+            await session.commit()
+        except Exception:
+            await session.rollback()
+
+        # company_analyses table
+        dialect = get_dialect()
+        pk_col = "id SERIAL PRIMARY KEY" if dialect == "postgresql" else "id INTEGER PRIMARY KEY AUTOINCREMENT"
+        try:
+            await session.execute(text(f"""
+                CREATE TABLE IF NOT EXISTS company_analyses (
+                    {pk_col},
+                    symbol TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    date TEXT NOT NULL,
+                    analysis_text TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """))
+            await session.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS uix_company_analyses "
+                    "ON company_analyses (symbol, user_id, date)"
+                )
             )
             await session.commit()
         except Exception:

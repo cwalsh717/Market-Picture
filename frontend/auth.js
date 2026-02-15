@@ -38,6 +38,8 @@
       // not logged in
     }
     renderNavAuth();
+    window.bradanUser = currentUser;
+    window.dispatchEvent(new CustomEvent("bradan-auth-ready", { detail: currentUser }));
   }
 
   /* ── Nav auth area ──────────────────────────────────────────────────── */
@@ -122,6 +124,8 @@
     }
     currentUser = null;
     renderNavAuth();
+    window.bradanUser = null;
+    window.dispatchEvent(new CustomEvent("bradan-auth-ready", { detail: null }));
   }
 
   /* ── Auth Modal (login / register) ──────────────────────────────────── */
@@ -263,6 +267,8 @@
       currentUser = { id: user.id, email: user.email };
       closeModal();
       renderNavAuth();
+      window.bradanUser = currentUser;
+      window.dispatchEvent(new CustomEvent("bradan-auth-ready", { detail: currentUser }));
     } catch (err) {
       errorEl.textContent = err.message;
       errorEl.classList.remove("hidden");

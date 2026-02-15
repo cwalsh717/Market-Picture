@@ -628,3 +628,89 @@ function showError(message) {
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", init);
+
+// ── Watchlist star ──────────────────────────────────────────────────────
+(function () {
+  function initWatchlistStar() {
+    var starBtn = document.getElementById("watchlist-star");
+    if (!starBtn) return;
+
+    var isInWatchlist = false;
+
+    async function checkWatchlistState() {
+      try {
+        var resp = await fetch(API_BASE + "/api/watchlist", { credentials: "same-origin" });
+        if (!resp.ok) return;
+        var data = await resp.json();
+        var symbols = (data.symbols || []).map(function(s) { return s.symbol; });
+        isInWatchlist = symbols.indexOf(currentSymbol) !== -1;
+        updateStarUI();
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    function updateStarUI() {
+      if (isInWatchlist) {
+        starBtn.innerHTML = "&#9733;";
+        starBtn.classList.add("active");
+        starBtn.title = "Remove from watchlist";
+      } else {
+        starBtn.innerHTML = "&#9734;";
+        starBtn.classList.remove("active");
+        starBtn.title = "Add to watchlist";
+      }
+    }
+
+    starBtn.addEventListener("click", async function () {
+      try {
+        if (isInWatchlist) {
+          var resp = await fetch(API_BASE + "/api/watchlist/" + encodeURIComponent(currentSymbol), {
+            method: "DELETE",
+            credentials: "same-origin",
+          });
+          if (resp.ok) {
+            isInWatchlist = false;
+            updateStarUI();
+          }
+        } else {
+          var resp = await fetch(API_BASE + "/api/watchlist", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "same-origin",
+            body: JSON.stringify({ symbol: currentSymbol }),
+          });
+          if (resp.ok || resp.status === 409) {
+            isInWatchlist = true;
+            updateStarUI();
+          }
+        }
+      } catch (e) {
+        console.error("Watchlist toggle failed:", e);
+      }
+    });
+
+    // Listen for auth ready
+    window.addEventListener("bradan-auth-ready", function (e) {
+      if (e.detail) {
+        starBtn.classList.remove("hidden");
+        checkWatchlistState();
+      } else {
+        starBtn.classList.add("hidden");
+      }
+    });
+
+    // If auth already resolved
+    if (window.bradanUser) {
+      starBtn.classList.remove("hidden");
+      checkWatchlistState();
+    }
+  }
+
+  // Wait for DOM if needed, otherwise run immediately
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initWatchlistStar);
+  } else {
+    initWatchlistStar();
+  }
+})();
