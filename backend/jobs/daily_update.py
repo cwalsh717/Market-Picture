@@ -28,10 +28,15 @@ _ET = ZoneInfo("US/Eastern")
 def is_market_open(market: str, now_et: datetime) -> bool:
     """Check whether a market region is currently in its trading hours.
 
+    Returns ``False`` on weekends for all non-crypto markets.
     Handles overnight sessions (e.g. Japan 20:00-02:00) where open > close.
     """
     if market == "24/7":
         return True
+
+    # Saturday = 5, Sunday = 6 — no equity/FX/commodity market trades.
+    if now_et.weekday() >= 5:
+        return False
 
     hours = MARKET_HOURS.get(market)
     if hours is None:

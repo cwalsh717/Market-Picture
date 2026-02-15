@@ -45,10 +45,11 @@ def create_scheduler(
         coalesce=True,
     )
 
-    # -- FRED: once daily at 3:30 PM ET ------------------------------------
+    # -- FRED: weekdays at 3:30 PM ET ---------------------------------------
     scheduler.add_job(
         fetch_fred_quotes,
         trigger="cron",
+        day_of_week="mon-fri",
         hour=15,
         minute=30,
         id="fred_quotes",
@@ -58,10 +59,11 @@ def create_scheduler(
         max_instances=1,
     )
 
-    # -- LLM pre-market summary: 8:00 AM ET (placeholder) ------------------
+    # -- LLM pre-market summary: weekdays 8:00 AM ET ----------------------
     scheduler.add_job(
         generate_premarket_summary,
         trigger="cron",
+        day_of_week="mon-fri",
         hour=8,
         minute=0,
         id="premarket_summary",
@@ -70,10 +72,11 @@ def create_scheduler(
         max_instances=1,
     )
 
-    # -- LLM after-close summary: 4:30 PM ET (placeholder) -----------------
+    # -- LLM after-close summary: weekdays 4:30 PM ET ---------------------
     scheduler.add_job(
         generate_close_summary,
         trigger="cron",
+        day_of_week="mon-fri",
         hour=16,
         minute=30,
         id="close_summary",
@@ -82,10 +85,11 @@ def create_scheduler(
         max_instances=1,
     )
 
-    # -- Daily history cache update: 4:45 PM ET ----------------------------
+    # -- Daily history cache update: weekdays 4:45 PM ET ------------------
     scheduler.add_job(
         daily_append_all,
         trigger="cron",
+        day_of_week="mon-fri",
         hour=16,
         minute=45,
         id="daily_history_append",

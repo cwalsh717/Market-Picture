@@ -125,6 +125,31 @@ class TestIsMarketOpen:
         t = datetime(2025, 1, 6, 12, 0, tzinfo=_ET)
         assert is_market_open("Mars", t) is False
 
+    def test_us_closed_on_saturday(self):
+        """Saturday 10 AM ET — US market hours but weekend."""
+        t = datetime(2025, 1, 4, 10, 0, tzinfo=_ET)  # Saturday
+        assert is_market_open("US", t) is False
+
+    def test_us_closed_on_sunday(self):
+        t = datetime(2025, 1, 5, 10, 0, tzinfo=_ET)  # Sunday
+        assert is_market_open("US", t) is False
+
+    def test_uk_closed_on_saturday(self):
+        t = datetime(2025, 1, 4, 5, 0, tzinfo=_ET)  # Saturday
+        assert is_market_open("UK", t) is False
+
+    def test_japan_closed_on_saturday(self):
+        t = datetime(2025, 1, 4, 21, 0, tzinfo=_ET)  # Saturday evening
+        assert is_market_open("Japan", t) is False
+
+    def test_crypto_open_on_saturday(self):
+        t = datetime(2025, 1, 4, 10, 0, tzinfo=_ET)  # Saturday
+        assert is_market_open("24/7", t) is True
+
+    def test_crypto_open_on_sunday(self):
+        t = datetime(2025, 1, 5, 3, 0, tzinfo=_ET)  # Sunday
+        assert is_market_open("24/7", t) is True
+
 
 # ---------------------------------------------------------------------------
 # get_active_symbols
@@ -175,6 +200,12 @@ class TestGetActiveSymbols:
     def test_all_closed_except_crypto(self):
         """17:00 ET: only crypto should be active."""
         t = datetime(2025, 1, 6, 17, 0, tzinfo=_ET)
+        active = get_active_symbols(t)
+        assert set(active) == {"BTC/USD", "ETH/USD"}
+
+    def test_weekend_only_crypto(self):
+        """Saturday 10 AM ET: only crypto despite US market hours."""
+        t = datetime(2025, 1, 4, 10, 0, tzinfo=_ET)  # Saturday
         active = get_active_symbols(t)
         assert set(active) == {"BTC/USD", "ETH/USD"}
 
