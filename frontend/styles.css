@@ -4,6 +4,8 @@
   border-bottom: 1px solid #1f2937;
   background: #030712;
   margin-bottom: 1.5rem;
+  position: relative;
+  z-index: 50;
 }
 
 .nav-inner {
@@ -1416,9 +1418,9 @@
 
 .sidebar {
   position: fixed;
-  top: 0;
+  top: 49px;
   left: 0;
-  height: 100vh;
+  height: calc(100vh - 49px);
   background: #0a0f1a;
   border-right: 1px solid #1f2937;
   z-index: 40;
