@@ -72,7 +72,9 @@ def get_active_symbols(now_et: datetime) -> list[str]:
 async def save_quotes(quotes: dict[str, dict]) -> int:
     """Insert quote data into the market_snapshots table.
 
-    Returns the number of rows inserted.
+    Stores core price data alongside enriched fields (52-week, average
+    volume, rolling changes) when available.  Returns the number of rows
+    inserted.
     """
     if not quotes:
         return 0
@@ -85,6 +87,13 @@ async def save_quotes(quotes: dict[str, dict]) -> int:
             "change_pct": data.get("change_pct"),
             "change_abs": data.get("change_abs"),
             "timestamp": data.get("timestamp", ""),
+            "average_volume": data.get("average_volume"),
+            "fifty_two_week_high": data.get("fifty_two_week_high"),
+            "fifty_two_week_low": data.get("fifty_two_week_low"),
+            "fifty_two_week_high_change_pct": data.get("fifty_two_week_high_change_pct"),
+            "fifty_two_week_low_change_pct": data.get("fifty_two_week_low_change_pct"),
+            "rolling_1d_change": data.get("rolling_1d_change"),
+            "rolling_7d_change": data.get("rolling_7d_change"),
         }
         for symbol, data in quotes.items()
         if "price" in data
@@ -98,8 +107,14 @@ async def save_quotes(quotes: dict[str, dict]) -> int:
         await session.execute(
             text("""
                 INSERT INTO market_snapshots
-                    (symbol, asset_class, price, change_pct, change_abs, timestamp)
-                VALUES (:symbol, :asset_class, :price, :change_pct, :change_abs, :timestamp)
+                    (symbol, asset_class, price, change_pct, change_abs, timestamp,
+                     average_volume, fifty_two_week_high, fifty_two_week_low,
+                     fifty_two_week_high_change_pct, fifty_two_week_low_change_pct,
+                     rolling_1d_change, rolling_7d_change)
+                VALUES (:symbol, :asset_class, :price, :change_pct, :change_abs, :timestamp,
+                        :average_volume, :fifty_two_week_high, :fifty_two_week_low,
+                        :fifty_two_week_high_change_pct, :fifty_two_week_low_change_pct,
+                        :rolling_1d_change, :rolling_7d_change)
             """),
             rows,
         )
@@ -292,53 +307,70 @@ async def _save_summary_and_archive(
         await session.close()
 
 
-async def generate_premarket_summary() -> None:
-    """Generate the pre-market LLM summary (~8:00 AM ET).
+async def fetch_premarket_quotes(provider: TwelveDataProvider) -> None:
+    """Fetch quotes for all symbols before market open.
 
-    Computes regime classification, generates a narrative via the Claude API,
-    and persists to both the summaries table and narrative_archive.
+    Runs at 7:45 AM ET to ensure fresh pre-market data (including
+    extended-hours quotes for US equities via prepost=true) before
+    the morning narrative is generated.
     """
-    from backend.intelligence.regime import classify_regime
-    from backend.intelligence.summary import generate_premarket
+    logger.info("Pre-market quote refresh triggered")
+
+    quotes = await provider.get_all_quotes()
+    if not quotes:
+        logger.warning("Pre-market refresh returned no quotes")
+        return
+
+    saved = await save_quotes(quotes)
+    logger.info("Pre-market refresh: fetched %d quotes, saved %d rows", len(quotes), saved)
+
+
+async def generate_premarket_summary() -> None:
+    """Generate the pre-market LLM summary (~9:45 AM ET).
+
+    Assembles an enriched narrative payload from DB data, calls the
+    Claude API with the structured prompt, and persists to both the
+    summaries table and narrative_archive.
+    """
+    from backend.intelligence.narrative_data import assemble_narrative_payload
+    from backend.intelligence.summary import generate_narrative
 
     logger.info("Pre-market summary job triggered")
 
-    session = await get_session()
-    try:
-        regime = await classify_regime(session)
-    except Exception:
-        logger.exception("Failed to classify regime for premarket summary")
-        return
-    finally:
-        await session.close()
+    payload = await assemble_narrative_payload("pre_market")
+    summary = await generate_narrative(payload)
 
-    summary = await generate_premarket(regime)
+    # Build a regime dict compatible with _save_summary_and_archive
+    regime = {
+        "label": payload["regime"]["label"],
+        "reason": payload["regime"]["confidence"],
+        "signals": payload["regime"]["signals"],
+    }
     logger.info("Pre-market regime: %s | %s", regime["label"], regime["reason"])
 
     await _save_summary_and_archive("premarket", "pre_market", regime, summary["summary_text"])
 
 
 async def generate_close_summary() -> None:
-    """Generate the after-close LLM summary (~4:30 PM ET).
+    """Generate the after-close LLM summary (~4:50 PM ET).
 
-    Computes regime classification, generates a narrative via the Claude API,
-    and persists to both the summaries table and narrative_archive.
+    Assembles an enriched narrative payload from DB data, calls the
+    Claude API with the structured prompt, and persists to both the
+    summaries table and narrative_archive.
     """
-    from backend.intelligence.regime import classify_regime
-    from backend.intelligence.summary import generate_close
+    from backend.intelligence.narrative_data import assemble_narrative_payload
+    from backend.intelligence.summary import generate_narrative
 
     logger.info("After-close summary job triggered")
 
-    session = await get_session()
-    try:
-        regime = await classify_regime(session)
-    except Exception:
-        logger.exception("Failed to classify regime for close summary")
-        return
-    finally:
-        await session.close()
+    payload = await assemble_narrative_payload("after_close")
+    summary = await generate_narrative(payload)
 
-    summary = await generate_close(regime)
+    regime = {
+        "label": payload["regime"]["label"],
+        "reason": payload["regime"]["confidence"],
+        "signals": payload["regime"]["signals"],
+    }
     logger.info("Regime: %s | %s", regime["label"], regime["reason"])
 
     await _save_summary_and_archive("close", "after_close", regime, summary["summary_text"])

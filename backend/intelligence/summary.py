@@ -1,27 +1,25 @@
-"""Claude API summary generation for pre-market and after-close narratives.
+"""Claude API narrative generation using structured JSON payloads.
 
-Builds structured prompts from regime classification output, calls the
-Anthropic API, and returns user-facing summaries with plain-English narratives.
+Receives an enriched narrative payload from ``narrative_data.py``, serializes
+it as JSON, calls the Anthropic API with the new structured system prompt,
+and returns the generated narrative text.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import datetime, timezone
 from typing import TypedDict
+from zoneinfo import ZoneInfo
 
 import anthropic
 
-from backend.config import (
-    ANTHROPIC_API_KEY,
-    CLOSE_USER_TEMPLATE,
-    PREMARKET_USER_TEMPLATE,
-    SUMMARY_CONFIG,
-    SUMMARY_SYSTEM_PROMPT,
-)
-from backend.intelligence.regime import RegimeResult, Signal
+from backend.config import ANTHROPIC_API_KEY, NARRATIVE_SYSTEM_PROMPT, SUMMARY_CONFIG
 
 logger = logging.getLogger(__name__)
+
+_ET = ZoneInfo("US/Eastern")
 
 
 # ---------------------------------------------------------------------------
@@ -30,60 +28,13 @@ logger = logging.getLogger(__name__)
 
 
 class SummaryResult(TypedDict):
-    """Output of a summary generation call."""
+    """Output of a narrative generation call."""
 
-    period: str                          # "premarket" | "close"
-    summary_text: str                    # LLM narrative (or fallback)
+    period: str          # "premarket" | "close"
+    summary_text: str    # LLM narrative (or fallback)
     regime_label: str
     regime_reason: str
-    timestamp: str                       # ISO-8601
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _format_regime_signals(signals: list[Signal]) -> str:
-    """Format individual regime signals into readable lines."""
-    return "\n".join(
-        f"- {s['name']} ({s['direction']}): {s['detail']}" for s in signals
-    )
-
-
-# ---------------------------------------------------------------------------
-# Prompt builders (public for testability)
-# ---------------------------------------------------------------------------
-
-
-def build_premarket_prompt(
-    date_str: str,
-    regime: RegimeResult,
-) -> str:
-    """Build the user prompt for the pre-market summary."""
-    day_name = datetime.strptime(date_str, "%Y-%m-%d").strftime("%A")
-    return PREMARKET_USER_TEMPLATE.format(
-        date=date_str,
-        day_name=day_name,
-        regime_label=regime["label"],
-        regime_reason=regime["reason"],
-        regime_signals=_format_regime_signals(regime["signals"]),
-    )
-
-
-def build_close_prompt(
-    date_str: str,
-    regime: RegimeResult,
-) -> str:
-    """Build the user prompt for the after-close summary."""
-    day_name = datetime.strptime(date_str, "%Y-%m-%d").strftime("%A")
-    return CLOSE_USER_TEMPLATE.format(
-        date=date_str,
-        day_name=day_name,
-        regime_label=regime["label"],
-        regime_reason=regime["reason"],
-        regime_signals=_format_regime_signals(regime["signals"]),
-    )
+    timestamp: str       # ISO-8601
 
 
 # ---------------------------------------------------------------------------
@@ -117,17 +68,40 @@ async def _call_anthropic(
 _FALLBACK_PREFIX = "[Auto-generated \u2014 LLM summary unavailable]"
 
 
-def _build_fallback_summary(
-    period: str,
-    regime: RegimeResult,
-) -> str:
-    """Build a structured plain-text summary when the API is unavailable."""
+def _build_fallback(payload: dict) -> str:
+    """Build a structured plain-text summary when the API is unavailable.
+
+    Uses enriched payload data when available for a richer fallback.
+    """
+    regime = payload.get("regime", {})
+    label = regime.get("label", "UNKNOWN")
+    confidence = regime.get("confidence", "")
+
     parts = [
         _FALLBACK_PREFIX,
         "",
-        f"Market Regime: {regime['label']}",
-        regime["reason"],
+        f"Market Regime: {label}",
+        confidence,
     ]
+
+    # Include top movers from asset_snapshot
+    assets = payload.get("asset_snapshot", {})
+    movers = sorted(
+        (
+            (sym, d.get("change_pct", 0) or 0)
+            for sym, d in assets.items()
+            if d.get("change_pct") is not None
+        ),
+        key=lambda x: abs(x[1]),
+        reverse=True,
+    )[:5]
+
+    if movers:
+        parts.append("")
+        parts.append("Top movers:")
+        for sym, pct in movers:
+            parts.append(f"  {sym}: {pct:+.2f}%")
+
     return "\n".join(parts)
 
 
@@ -136,55 +110,48 @@ def _build_fallback_summary(
 # ---------------------------------------------------------------------------
 
 
-async def generate_premarket(
-    regime: RegimeResult,
+async def generate_narrative(
+    payload: dict,
     client: anthropic.AsyncAnthropic | None = None,
 ) -> SummaryResult:
-    """Generate the pre-market summary (~8 AM ET).
+    """Generate a narrative from an enriched payload.
 
-    Calls the Anthropic API with regime data.
-    Falls back to a structured plain-text summary on API failure.
+    Serializes the payload as JSON and sends it to the Claude API with
+    the structured system prompt.  Falls back to a plain-text summary
+    on API failure.
+
+    Args:
+        payload: Structured dict from ``assemble_narrative_payload()``.
+        client:  Optional injectable Anthropic client (for testing).
     """
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    prompt = build_premarket_prompt(date_str, regime)
+    now_et = datetime.now(_ET)
+    date_str = now_et.strftime("%Y-%m-%d")
+    day_of_week = now_et.strftime("%A")
 
-    try:
-        text = await _call_anthropic(SUMMARY_SYSTEM_PROMPT, prompt, client)
-    except Exception:
-        logger.exception("Anthropic API call failed for premarket summary")
-        text = _build_fallback_summary("premarket", regime)
-
-    return SummaryResult(
-        period="premarket",
-        summary_text=text,
-        regime_label=regime["label"],
-        regime_reason=regime["reason"],
-        timestamp=datetime.now(timezone.utc).isoformat(),
+    system_prompt = NARRATIVE_SYSTEM_PROMPT.format(
+        day_of_week=day_of_week,
+        date=date_str,
     )
 
+    user_message = json.dumps(payload, indent=2, default=str)
 
-async def generate_close(
-    regime: RegimeResult,
-    client: anthropic.AsyncAnthropic | None = None,
-) -> SummaryResult:
-    """Generate the after-close summary (~4:30 PM ET).
+    narrative_type = payload.get("narrative_type", "after_close")
+    period = "premarket" if narrative_type == "pre_market" else "close"
 
-    Calls the Anthropic API with regime data.
-    Falls back to a structured plain-text summary on API failure.
-    """
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    prompt = build_close_prompt(date_str, regime)
+    regime = payload.get("regime", {})
+    label = regime.get("label", "UNKNOWN")
+    confidence = regime.get("confidence", "")
 
     try:
-        text = await _call_anthropic(SUMMARY_SYSTEM_PROMPT, prompt, client)
+        text = await _call_anthropic(system_prompt, user_message, client)
     except Exception:
-        logger.exception("Anthropic API call failed for close summary")
-        text = _build_fallback_summary("close", regime)
+        logger.exception("Anthropic API call failed for %s narrative", period)
+        text = _build_fallback(payload)
 
     return SummaryResult(
-        period="close",
+        period=period,
         summary_text=text,
-        regime_label=regime["label"],
-        regime_reason=regime["reason"],
+        regime_label=label,
+        regime_reason=confidence,
         timestamp=datetime.now(timezone.utc).isoformat(),
     )

@@ -64,6 +64,13 @@ class MarketSnapshot(Base):
     change_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     change_abs: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     timestamp: Mapped[str] = mapped_column(String, nullable=False)
+    average_volume: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    fifty_two_week_high: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    fifty_two_week_low: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    fifty_two_week_high_change_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    fifty_two_week_low_change_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    rolling_1d_change: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    rolling_7d_change: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
 
 
 class DailyHistory(Base):
@@ -134,6 +141,19 @@ class Watchlist(Base):
     display_order: Mapped[int] = mapped_column(Integer, default=0)
 
 
+class TechnicalSignal(Base):
+    __tablename__ = "technical_signals"
+
+    symbol: Mapped[str] = mapped_column(String, primary_key=True)
+    date: Mapped[str] = mapped_column(String, primary_key=True)
+    rsi_14: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    atr_14: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    sma_50: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    sma_200: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    close: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
+
+
 # ---------------------------------------------------------------------------
 # Initialization + session access
 # ---------------------------------------------------------------------------
@@ -156,6 +176,8 @@ async def init_db(url: Optional[str] = None) -> None:
 
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    await _run_migrations()
 
     dialect = _engine.dialect.name
     safe_url = actual_url.split("@")[-1] if "@" in actual_url else actual_url
@@ -185,17 +207,44 @@ async def close_db() -> None:
     _session_factory = None
 
 
-async def _migrate_summaries_table(session: AsyncSession) -> None:
-    """Add columns that may be missing from an older summaries schema.
+async def _run_migrations() -> None:
+    """Add columns that may be missing from older schemas.
 
-    This is a no-op for fresh databases created by ``init_db()``, since
-    ``create_all()`` includes all columns. Only needed for pre-existing
-    databases being upgraded.
+    Safe to run repeatedly — each ALTER TABLE is wrapped in try/except
+    so columns that already exist are silently skipped.
     """
+    if _session_factory is None:
+        return
+
+    session = _session_factory()
     try:
-        await session.execute(
-            text("ALTER TABLE summaries ADD COLUMN regime_signals_json TEXT")
-        )
-        await session.commit()
-    except Exception:
-        await session.rollback()
+        # market_snapshots: enriched quote columns
+        for col in (
+            "average_volume",
+            "fifty_two_week_high",
+            "fifty_two_week_low",
+            "fifty_two_week_high_change_pct",
+            "fifty_two_week_low_change_pct",
+            "rolling_1d_change",
+            "rolling_7d_change",
+        ):
+            try:
+                await session.execute(
+                    text(
+                        f"ALTER TABLE market_snapshots ADD COLUMN {col} DOUBLE PRECISION"
+                    )
+                )
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+        # summaries: regime_signals_json (legacy migration)
+        try:
+            await session.execute(
+                text("ALTER TABLE summaries ADD COLUMN regime_signals_json TEXT")
+            )
+            await session.commit()
+        except Exception:
+            await session.rollback()
+    finally:
+        await session.close()

@@ -8,10 +8,12 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from backend.jobs.daily_update import (
     fetch_fred_quotes,
+    fetch_premarket_quotes,
     fetch_twelve_data_quotes,
     generate_close_summary,
     generate_premarket_summary,
 )
+from backend.intelligence.narrative_data import fetch_technical_signals
 from backend.services.history_cache import daily_append_all
 from backend.providers.fred import FredProvider
 from backend.providers.twelve_data import TwelveDataProvider
@@ -59,26 +61,53 @@ def create_scheduler(
         max_instances=1,
     )
 
-    # -- LLM pre-market summary: weekdays 8:00 AM ET ----------------------
+    # -- Pre-market quote refresh: weekdays 7:45 AM ET ---------------------
+    scheduler.add_job(
+        fetch_premarket_quotes,
+        trigger="cron",
+        day_of_week="mon-fri",
+        hour=7,
+        minute=45,
+        id="premarket_quotes",
+        name="Pre-market quote refresh (with extended hours)",
+        kwargs={"provider": twelve_data},
+        replace_existing=True,
+        max_instances=1,
+    )
+
+    # -- LLM pre-market summary: weekdays 9:45 AM ET --------------------
     scheduler.add_job(
         generate_premarket_summary,
         trigger="cron",
         day_of_week="mon-fri",
-        hour=8,
-        minute=0,
+        hour=9,
+        minute=45,
         id="premarket_summary",
         name="Generate pre-market LLM summary",
         replace_existing=True,
         max_instances=1,
     )
 
-    # -- LLM after-close summary: weekdays 4:30 PM ET ---------------------
+    # -- Technical indicators fetch: weekdays 4:35 PM ET -----------------
+    scheduler.add_job(
+        fetch_technical_signals,
+        trigger="cron",
+        day_of_week="mon-fri",
+        hour=16,
+        minute=35,
+        id="technical_signals",
+        name="Fetch technical indicators for key symbols",
+        replace_existing=True,
+        max_instances=1,
+    )
+
+    # -- LLM after-close summary: weekdays 4:50 PM ET -------------------
     scheduler.add_job(
         generate_close_summary,
         trigger="cron",
         day_of_week="mon-fri",
         hour=16,
-        minute=30,
+        minute=50,
         id="close_summary",
         name="Generate after-close LLM summary",
         replace_existing=True,

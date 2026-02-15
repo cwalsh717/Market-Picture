@@ -20,7 +20,7 @@ import pytest
 from sqlalchemy import text
 
 from backend.config import SYMBOL_ASSET_CLASS, SYMBOL_MARKET_MAP
-from backend.db import _migrate_summaries_table, close_db, get_session, init_db
+from backend.db import _run_migrations, close_db, get_session, init_db
 from backend.jobs.daily_update import (
     fetch_fred_quotes,
     fetch_twelve_data_quotes,
@@ -428,20 +428,49 @@ class TestConfigConsistency:
 # Fake intelligence data for summary persistence tests
 # ---------------------------------------------------------------------------
 
-_FAKE_REGIME = {
-    "label": "RISK-ON",
-    "reason": "Broad risk appetite",
-    "signals": [
-        {"name": "spx_trend", "direction": "risk_on", "detail": "S&P above 20-day MA"},
-        {"name": "vix", "direction": "risk_on", "detail": "VIXY falling (-7.0%)"},
-    ],
+_FAKE_PAYLOAD_PREMARKET = {
+    "generated_at": "2025-01-06T12:00:00+00:00",
+    "narrative_type": "pre_market",
+    "data_freshness": "pre_market",
+    "regime": {
+        "label": "RISK-ON",
+        "changed_since_last": False,
+        "previous_label": "RISK-ON",
+        "signals": {
+            "sp500_trend": {"signal": "bullish", "detail": "SPY above 50-day MA"},
+            "vix": {"signal": "low", "level": 12.5},
+        },
+        "confidence": "3 of 5 signals bullish",
+    },
+    "asset_snapshot": {"SPY": {"price": 5100.0, "change_pct": 0.5}},
+    "rates": {"us_2y": 4.15, "us_10y": 4.55, "spread_2s10s": 0.4, "ig_spread": 1.2, "hy_spread": 3.8},
+    "previous_narrative": None,
+}
+
+_FAKE_PAYLOAD_CLOSE = {
+    "generated_at": "2025-01-06T21:00:00+00:00",
+    "narrative_type": "after_close",
+    "data_freshness": "close",
+    "regime": {
+        "label": "RISK-ON",
+        "changed_since_last": False,
+        "previous_label": "RISK-ON",
+        "signals": {
+            "sp500_trend": {"signal": "bullish", "detail": "SPY above 50-day MA"},
+            "vix": {"signal": "low", "level": 12.5},
+        },
+        "confidence": "3 of 5 signals bullish",
+    },
+    "asset_snapshot": {"SPY": {"price": 5100.0, "change_pct": 0.5}},
+    "rates": {"us_2y": 4.15, "us_10y": 4.55, "spread_2s10s": 0.4, "ig_spread": 1.2, "hy_spread": 3.8},
+    "previous_narrative": None,
 }
 
 _FAKE_SUMMARY_PREMARKET = {
     "period": "premarket",
     "summary_text": "Markets are calm overnight.",
     "regime_label": "RISK-ON",
-    "regime_reason": "Broad risk appetite",
+    "regime_reason": "3 of 5 signals bullish",
     "timestamp": "2025-01-06T12:00:00+00:00",
 }
 
@@ -449,7 +478,7 @@ _FAKE_SUMMARY_CLOSE = {
     "period": "close",
     "summary_text": "A strong day across equities.",
     "regime_label": "RISK-ON",
-    "regime_reason": "Broad risk appetite",
+    "regime_reason": "3 of 5 signals bullish",
     "timestamp": "2025-01-06T21:00:00+00:00",
 }
 
@@ -474,9 +503,9 @@ class TestSummaryPersistence:
             })(),
         )
 
-        with patch("backend.intelligence.regime.classify_regime", new_callable=AsyncMock) as mock_regime, \
-             patch("backend.intelligence.summary.generate_premarket", new_callable=AsyncMock) as mock_gen:
-            mock_regime.return_value = _FAKE_REGIME
+        with patch("backend.intelligence.narrative_data.assemble_narrative_payload", new_callable=AsyncMock) as mock_payload, \
+             patch("backend.intelligence.summary.generate_narrative", new_callable=AsyncMock) as mock_gen:
+            mock_payload.return_value = _FAKE_PAYLOAD_PREMARKET
             mock_gen.return_value = _FAKE_SUMMARY_PREMARKET
 
             await generate_premarket_summary()
@@ -489,12 +518,11 @@ class TestSummaryPersistence:
         assert row["period"] == "premarket"
         assert row["summary_text"] == "Markets are calm overnight."
         assert row["regime_label"] == "RISK-ON"
-        assert row["regime_reason"] == "Broad risk appetite"
+        assert row["regime_reason"] == "3 of 5 signals bullish"
 
-        # regime_signals_json should contain the signal breakdowns
+        # regime_signals_json should contain the structured signals
         signals = json.loads(row["regime_signals_json"])
-        assert len(signals) == 2
-        assert signals[0]["name"] == "spx_trend"
+        assert "sp500_trend" in signals
 
     @pytest.mark.asyncio
     async def test_close_persists_all_columns(self, monkeypatch):
@@ -507,9 +535,9 @@ class TestSummaryPersistence:
             })(),
         )
 
-        with patch("backend.intelligence.regime.classify_regime", new_callable=AsyncMock) as mock_regime, \
-             patch("backend.intelligence.summary.generate_close", new_callable=AsyncMock) as mock_gen:
-            mock_regime.return_value = _FAKE_REGIME
+        with patch("backend.intelligence.narrative_data.assemble_narrative_payload", new_callable=AsyncMock) as mock_payload, \
+             patch("backend.intelligence.summary.generate_narrative", new_callable=AsyncMock) as mock_gen:
+            mock_payload.return_value = _FAKE_PAYLOAD_CLOSE
             mock_gen.return_value = _FAKE_SUMMARY_CLOSE
 
             await generate_close_summary()
@@ -522,7 +550,7 @@ class TestSummaryPersistence:
         assert row["summary_text"] == "A strong day across equities."
 
         signals = json.loads(row["regime_signals_json"])
-        assert len(signals) == 2
+        assert "sp500_trend" in signals
 
 
 # ---------------------------------------------------------------------------
@@ -530,18 +558,19 @@ class TestSummaryPersistence:
 # ---------------------------------------------------------------------------
 
 
-class TestSummariesMigration:
-    """Verify _migrate_summaries_table handles missing columns gracefully."""
+class TestMigrations:
+    """Verify _run_migrations handles existing columns gracefully."""
 
     @pytest.mark.asyncio
     async def test_migration_is_idempotent(self):
         """Running migration on a DB that already has all columns doesn't fail."""
+        # init_db already runs _run_migrations; calling again should be safe
+        await _run_migrations()
+        await _run_migrations()
+
         session = await get_session()
         try:
-            await _migrate_summaries_table(session)
-            await _migrate_summaries_table(session)  # second call should not fail
-
-            # Verify we can still insert and read
+            # Verify we can insert with both old and new columns
             await session.execute(
                 text("""
                     INSERT INTO summaries
@@ -565,5 +594,57 @@ class TestSummariesMigration:
             )
             row = result.mappings().first()
             assert row["regime_signals_json"] == "[]"
+        finally:
+            await session.close()
+
+    @pytest.mark.asyncio
+    async def test_new_snapshot_columns_exist(self):
+        """Verify enriched market_snapshots columns are available."""
+        session = await get_session()
+        try:
+            await session.execute(
+                text("""
+                    INSERT INTO market_snapshots
+                        (symbol, asset_class, price, change_pct, change_abs,
+                         timestamp, average_volume, fifty_two_week_high,
+                         rolling_7d_change)
+                    VALUES ('SPY', 'equities', 5100.0, 0.5, 25.0,
+                            '2025-01-06', 65000000, 5200.0, 1.2)
+                """)
+            )
+            await session.commit()
+
+            result = await session.execute(
+                text("SELECT average_volume, fifty_two_week_high, rolling_7d_change FROM market_snapshots")
+            )
+            row = result.mappings().first()
+            assert row["average_volume"] == 65000000
+            assert row["fifty_two_week_high"] == 5200.0
+            assert row["rolling_7d_change"] == 1.2
+        finally:
+            await session.close()
+
+    @pytest.mark.asyncio
+    async def test_technical_signals_table_exists(self):
+        """Verify technical_signals table was created."""
+        session = await get_session()
+        try:
+            await session.execute(
+                text("""
+                    INSERT INTO technical_signals
+                        (symbol, date, rsi_14, sma_50, sma_200, close, created_at)
+                    VALUES ('SPY', '2025-01-06', 65.0, 5000.0, 4800.0, 5100.0,
+                            '2025-01-06T21:00:00Z')
+                """)
+            )
+            await session.commit()
+
+            result = await session.execute(
+                text("SELECT rsi_14, sma_50, sma_200 FROM technical_signals WHERE symbol = 'SPY'")
+            )
+            row = result.mappings().first()
+            assert row["rsi_14"] == 65.0
+            assert row["sma_50"] == 5000.0
+            assert row["sma_200"] == 4800.0
         finally:
             await session.close()

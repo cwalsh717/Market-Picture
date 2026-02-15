@@ -135,6 +135,16 @@ for _series_id in FRED_SERIES:
 SYMBOL_ASSET_CLASS["SPREAD_2S10S"] = "rates"
 
 # ---------------------------------------------------------------------------
+# US equity symbols (get prepost=true for extended-hours quotes)
+# ---------------------------------------------------------------------------
+US_EQUITY_SYMBOLS: set[str] = {"SPY", "QQQ", "IWM", "VIXY"}
+
+# ---------------------------------------------------------------------------
+# Technical indicator symbols (fetched daily at 4:35 PM ET)
+# ---------------------------------------------------------------------------
+TECHNICAL_SIGNAL_SYMBOLS: list[str] = ["SPY", "QQQ", "GLD", "BTC/USD", "UUP", "VIXY"]
+
+# ---------------------------------------------------------------------------
 # LLM summary settings
 # ---------------------------------------------------------------------------
 SUMMARY_CONFIG: dict[str, object] = {
@@ -143,27 +153,30 @@ SUMMARY_CONFIG: dict[str, object] = {
     "temperature": 0.3,
 }
 
-SUMMARY_SYSTEM_PROMPT: str = (
-    "You are a market analyst writing for a general audience. "
-    "Explain cross-asset market moves in plain English, no jargon. "
-    "Focus on the narrative: what is moving together and why it matters. "
-    "Mention the scarcity vs abundance theme (critical minerals — uranium, "
-    "lithium, rare earths) when relevant. "
-    "Keep to 3-5 concise paragraphs of flowing prose. No bullet points or headers."
-)
-
-PREMARKET_USER_TEMPLATE: str = (
-    "Write a pre-market briefing for {day_name}, {date}.\n\n"
-    "Current regime: {regime_label} — {regime_reason}\n\n"
-    "Signals:\n{regime_signals}\n\n"
-    "Cover: (1) the regime and what's driving it, "
-    "(2) what to watch today."
-)
-
-CLOSE_USER_TEMPLATE: str = (
-    "Write an after-close market summary for {day_name}, {date}.\n\n"
-    "Regime: {regime_label} — {regime_reason}\n"
-    "Signals:\n{regime_signals}\n\n"
-    "Cover: (1) regime and what drove it, "
-    "(2) what this means for someone watching markets."
+NARRATIVE_SYSTEM_PROMPT: str = (
+    "You are a market analyst writing a daily briefing for a finance-focused "
+    "reader who prefers facts over narrative. Be direct and concise. Describe "
+    "what happened and what it means structurally \u2014 do not predict direction.\n\n"
+    "Structure your response in exactly these sections:\n\n"
+    "REGIME STATUS (1-2 sentences): Current regime label, whether it changed, "
+    'signal confidence (e.g. "4 of 5 signals bearish"). If regime flipped, '
+    "lead with that.\n\n"
+    "WHAT HAPPENED (3-5 sentences): Factual price action across asset classes. "
+    "Lead with biggest moves. Specific numbers. Note any unusual volume "
+    "(volume_vs_avg above 1.5 or below 0.5) or RSI extremes (above 70 or "
+    "below 30). Compare to prior session when relevant using the "
+    "previous_narrative context.\n\n"
+    "CROSS-ASSET SIGNALS (2-3 sentences): Notable confirmations or divergences "
+    "across asset classes. Examples: gold rising while yields also rise, credit "
+    "spreads widening while equities are flat, crypto diverging from risk "
+    "assets. Only include this section if there is something genuinely "
+    "notable \u2014 omit entirely if all assets are moving as expected for the "
+    "current regime.\n\n"
+    "LEVELS TO WATCH (2-3 bullets): Key technical levels from the data \u2014 "
+    "52-week highs/lows being approached or tested, major SMA crossovers "
+    "(price crossing 50-day or 200-day), extreme RSI readings. Facts only, "
+    "no predictions.\n\n"
+    "Keep the entire response under 200 words. No greetings, no sign-offs, "
+    'no hedging. Do not say "markets" when you can name the specific '
+    "instrument. Today is {day_of_week}, {date}."
 )

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 
 import httpx
 
-from backend.config import ASSETS, TWELVE_DATA_API_KEY
+from backend.config import ASSETS, TWELVE_DATA_API_KEY, US_EQUITY_SYMBOLS
 from backend.providers.base import DataProvider
 
 logger = logging.getLogger(__name__)
@@ -40,13 +40,47 @@ def _all_symbols() -> list[str]:
 
 
 def _parse_quote(raw: dict) -> dict:
-    """Normalize a single quote response into a standard dict."""
-    return {
+    """Normalize a single quote response into a standard dict.
+
+    Extracts enriched fields (52-week, average volume, rolling changes)
+    alongside the core price data.  Missing enriched fields are omitted
+    rather than set to None so callers can use ``.get()`` safely.
+    """
+    result = {
         "price": float(raw["close"]),
         "change_pct": float(raw["percent_change"]),
         "change_abs": float(raw["change"]),
         "timestamp": raw.get("datetime", raw.get("timestamp", "")),
     }
+
+    # Enriched fields — best-effort extraction
+    for src_key, dst_key in (
+        ("average_volume", "average_volume"),
+        ("rolling_1d_change", "rolling_1d_change"),
+        ("rolling_7d_change", "rolling_7d_change"),
+    ):
+        val = raw.get(src_key)
+        if val is not None:
+            try:
+                result[dst_key] = float(val)
+            except (ValueError, TypeError):
+                pass
+
+    ftw = raw.get("fifty_two_week") or {}
+    for src_key, dst_key in (
+        ("high", "fifty_two_week_high"),
+        ("low", "fifty_two_week_low"),
+        ("high_change_percent", "fifty_two_week_high_change_pct"),
+        ("low_change_percent", "fifty_two_week_low_change_pct"),
+    ):
+        val = ftw.get(src_key)
+        if val is not None:
+            try:
+                result[dst_key] = float(val)
+            except (ValueError, TypeError):
+                pass
+
+    return result
 
 
 def _parse_batch_quotes(raw: dict, symbols: list[str]) -> dict[str, dict]:
@@ -172,30 +206,61 @@ class TwelveDataProvider(DataProvider):
             logger.error("get_quote(%s) failed: %s", symbol, exc)
             return {}
 
-    async def get_all_quotes(self) -> dict[str, dict]:
-        """Batch-fetch quotes for all configured assets in one HTTP call."""
-        symbols = _all_symbols()
-        try:
-            raw = await self._request(
-                "/quote", {"symbol": ",".join(symbols)}
-            )
-            return _parse_batch_quotes(raw, symbols)
-        except (httpx.HTTPError, TwelveDataError, KeyError, ValueError) as exc:
-            logger.error("get_all_quotes failed: %s", exc)
-            return {}
-
-    async def get_quotes_for_symbols(self, symbols: list[str]) -> dict[str, dict]:
-        """Batch-fetch quotes for a specific list of symbols in one HTTP call."""
+    async def _batch_quote_request(
+        self,
+        symbols: list[str],
+        extra_params: dict | None = None,
+    ) -> dict[str, dict]:
+        """Fetch quotes for a list of symbols in one HTTP call."""
         if not symbols:
             return {}
+        params: dict[str, str] = {"symbol": ",".join(symbols)}
+        if extra_params:
+            params.update(extra_params)
         try:
-            raw = await self._request(
-                "/quote", {"symbol": ",".join(symbols)}
-            )
+            raw = await self._request("/quote", params)
             return _parse_batch_quotes(raw, symbols)
         except (httpx.HTTPError, TwelveDataError, KeyError, ValueError) as exc:
-            logger.error("get_quotes_for_symbols failed: %s", exc)
+            logger.error("Batch quote request failed: %s", exc)
             return {}
+
+    async def get_all_quotes(self) -> dict[str, dict]:
+        """Batch-fetch quotes for all configured assets.
+
+        US equities (SPY, QQQ, IWM, VIXY) are fetched with ``prepost=true``
+        for extended-hours data; all other symbols are fetched without it.
+        """
+        symbols = _all_symbols()
+        us_eq = [s for s in symbols if s in US_EQUITY_SYMBOLS]
+        others = [s for s in symbols if s not in US_EQUITY_SYMBOLS]
+
+        results: dict[str, dict] = {}
+        if us_eq:
+            results.update(
+                await self._batch_quote_request(us_eq, {"prepost": "true"})
+            )
+        if others:
+            results.update(await self._batch_quote_request(others))
+        return results
+
+    async def get_quotes_for_symbols(self, symbols: list[str]) -> dict[str, dict]:
+        """Batch-fetch quotes for a specific list of symbols.
+
+        US equities are fetched with ``prepost=true``; others without.
+        """
+        if not symbols:
+            return {}
+        us_eq = [s for s in symbols if s in US_EQUITY_SYMBOLS]
+        others = [s for s in symbols if s not in US_EQUITY_SYMBOLS]
+
+        results: dict[str, dict] = {}
+        if us_eq:
+            results.update(
+                await self._batch_quote_request(us_eq, {"prepost": "true"})
+            )
+        if others:
+            results.update(await self._batch_quote_request(others))
+        return results
 
     async def get_history(self, symbol: str, period: str) -> list[dict]:
         """Fetch historical OHLCV bars for a symbol over a given period."""
