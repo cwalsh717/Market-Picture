@@ -1671,16 +1671,7 @@
   width: 120px;
 }
 
-/* Sidebar pushes content right — content sits beside sidebar, not under it */
-#main-content {
-  transition: margin-left 0.2s ease;
-}
-body.has-sidebar #main-content {
-  margin-left: 296px;
-}
-body.has-sidebar.sidebar-collapsed #main-content {
-  margin-left: 64px;
-}
+/* Sidebar is position:fixed overlay — main content layout is independent */
 
 /* ── Mobile bottom sheet ──────────────────────────────────────────── */
 
@@ -1755,11 +1746,6 @@ body.has-sidebar.sidebar-collapsed #main-content {
 
 @media (max-width: 640px) {
   .sidebar { display: none !important; }
-  /* Safety fallback: ensure no margin-left on mobile regardless of body classes */
-  body.has-sidebar #main-content,
-  body.has-sidebar.sidebar-collapsed #main-content {
-    margin-left: 0;
-  }
 }
 @media (min-width: 641px) {
   .mobile-watchlist-btn { display: none !important; }

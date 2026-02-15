@@ -280,7 +280,6 @@
     if (!watchlistsData.length && !window.bradanUser) {
       container.innerHTML = '';
       container.className = '';
-      document.body.classList.remove("has-sidebar", "sidebar-collapsed");
       return;
     }
 
@@ -288,7 +287,6 @@
     if (!window.bradanUser) {
       container.innerHTML = '';
       container.className = '';
-      document.body.classList.remove("has-sidebar", "sidebar-collapsed");
       return;
     }
 
@@ -311,13 +309,6 @@
 
     container.innerHTML = isCollapsed ? collapsedHTML : expandedHTML;
     container.className = isCollapsed ? "sidebar sidebar-collapsed" : "sidebar sidebar-expanded";
-
-    document.body.classList.add("has-sidebar");
-    if (isCollapsed) {
-      document.body.classList.add("sidebar-collapsed");
-    } else {
-      document.body.classList.remove("sidebar-collapsed");
-    }
 
     wireDesktopEvents(container);
   }
