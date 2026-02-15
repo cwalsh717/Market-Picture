@@ -10,3 +10,6 @@ aiosqlite
 numpy
 pandas
 tzdata
+bcrypt
+python-jose[cryptography]
+email-validator

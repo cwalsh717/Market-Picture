@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 
+from backend.auth import router as auth_router
 from backend.config import ASSETS, FRED_SERIES, SYMBOL_ASSET_CLASS
 from backend.db import close_db, get_session, init_db
 from backend.jobs.daily_update import generate_close_summary, save_quotes
@@ -85,6 +86,7 @@ async def _startup_backfill(provider: TwelveDataProvider) -> None:
 
 
 app = FastAPI(title="Bradán", lifespan=lifespan)
+app.include_router(auth_router)
 
 app.add_middleware(
     CORSMiddleware,

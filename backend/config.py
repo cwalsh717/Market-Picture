@@ -19,6 +19,14 @@ DATABASE_URL: str = os.getenv("DATABASE_URL", "")
 DATABASE_PATH: str = os.getenv("DATABASE_PATH", "market_picture.db")
 
 # ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+JWT_SECRET: str = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
+JWT_ALGORITHM: str = "HS256"
+JWT_EXPIRE_MINUTES: int = int(os.getenv("JWT_EXPIRE_MINUTES", "10080"))  # 7 days
+COOKIE_SECURE: bool = os.getenv("COOKIE_SECURE", "true").lower() == "true"
+
+# ---------------------------------------------------------------------------
 # Market hours (all times in ET, 24-hour format)
 # ---------------------------------------------------------------------------
 MARKET_HOURS: dict[str, dict[str, str]] = {
