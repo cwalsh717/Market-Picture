@@ -17,7 +17,7 @@ from backend.config import (
     JWT_EXPIRE_MINUTES,
     JWT_SECRET,
 )
-from backend.db import User, get_session
+from backend.db import User, get_session, seed_default_watchlist
 
 logger = logging.getLogger(__name__)
 
@@ -158,8 +158,10 @@ async def register(body: RegisterRequest, response: Response) -> dict:
             created_at=now,
         )
         session.add(user)
-        await session.commit()
+        await session.flush()
         await session.refresh(user)
+        await seed_default_watchlist(user.id, session)
+        await session.commit()
 
         token = create_access_token(user.id, email)
         _set_auth_cookie(response, token)

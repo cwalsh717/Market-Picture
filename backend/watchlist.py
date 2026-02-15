@@ -1,4 +1,4 @@
-"""Watchlist CRUD: add, remove, list, and reorder symbols for logged-in users."""
+"""Backward-compat shim: /api/watchlist (singular) delegates to the user's default watchlist."""
 
 from __future__ import annotations
 
@@ -10,13 +10,13 @@ from pydantic import BaseModel
 from sqlalchemy import text
 
 from backend.auth import get_current_user
-from backend.config import WATCHLIST_MAX_SIZE
+from backend.config import WATCHLIST_MAX_ITEMS_PER_LIST
 from backend.db import get_dialect, get_session
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Pydantic models
+# Pydantic models (kept for backward compat)
 # ---------------------------------------------------------------------------
 
 
@@ -29,6 +29,34 @@ class ReorderRequest(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+async def _get_default_watchlist_id(user_id: int, session) -> int:
+    """Get the user's default watchlist ID, creating one if needed."""
+    result = await session.execute(
+        text("SELECT id FROM watchlist_lists WHERE user_id = :user_id AND is_default = 1"),
+        {"user_id": user_id},
+    )
+    row = result.first()
+    if row:
+        return row[0]
+
+    # Auto-create default watchlist with Mag 7
+    from backend.db import seed_default_watchlist
+
+    await seed_default_watchlist(user_id, session)
+    await session.commit()
+
+    result = await session.execute(
+        text("SELECT id FROM watchlist_lists WHERE user_id = :user_id AND is_default = 1"),
+        {"user_id": user_id},
+    )
+    return result.first()[0]
+
+
+# ---------------------------------------------------------------------------
 # Router
 # ---------------------------------------------------------------------------
 
@@ -37,27 +65,29 @@ router = APIRouter(prefix="/api/watchlist", tags=["watchlist"])
 
 @router.get("")
 async def list_watchlist(user: dict = Depends(get_current_user)) -> dict:
-    """Return the authenticated user's watchlist with latest price data."""
+    """Return the authenticated user's default watchlist with latest price data."""
     user_id = int(user["sub"])
 
     session = await get_session()
     try:
+        wl_id = await _get_default_watchlist_id(user_id, session)
+
         result = await session.execute(
             text("""
-                SELECT w.symbol, w.added_at, w.display_order,
+                SELECT wi.symbol, wi.added_at, wi.position,
                        s.price, s.change_pct, s.change_abs,
                        s.fifty_two_week_high, s.fifty_two_week_low
-                FROM watchlists w
-                LEFT JOIN market_snapshots s ON s.symbol = w.symbol
+                FROM watchlist_items wi
+                LEFT JOIN market_snapshots s ON s.symbol = wi.symbol
                     AND s.id = (
                         SELECT MAX(ms.id)
                         FROM market_snapshots ms
-                        WHERE ms.symbol = w.symbol
+                        WHERE ms.symbol = wi.symbol
                     )
-                WHERE w.user_id = :user_id
-                ORDER BY w.display_order
+                WHERE wi.watchlist_id = :wl_id
+                ORDER BY wi.position
             """),
-            {"user_id": user_id},
+            {"wl_id": wl_id},
         )
         rows = result.mappings().all()
 
@@ -68,7 +98,7 @@ async def list_watchlist(user: dict = Depends(get_current_user)) -> dict:
                 "change_pct": row["change_pct"],
                 "change_abs": row["change_abs"],
                 "added_at": row["added_at"],
-                "display_order": row["display_order"],
+                "display_order": row["position"],
                 "fifty_two_week_high": row["fifty_two_week_high"],
                 "fifty_two_week_low": row["fifty_two_week_low"],
             }
@@ -85,7 +115,7 @@ async def add_symbol(
     body: AddSymbolRequest,
     user: dict = Depends(get_current_user),
 ) -> dict:
-    """Add a symbol to the authenticated user's watchlist."""
+    """Add a symbol to the authenticated user's default watchlist."""
     user_id = int(user["sub"])
     symbol = body.symbol.strip().upper()
 
@@ -94,25 +124,30 @@ async def add_symbol(
 
     session = await get_session()
     try:
+        wl_id = await _get_default_watchlist_id(user_id, session)
+
         # Check current count
         count_result = await session.execute(
-            text("SELECT COUNT(*) AS cnt FROM watchlists WHERE user_id = :user_id"),
-            {"user_id": user_id},
+            text(
+                "SELECT COUNT(*) AS cnt FROM watchlist_items WHERE watchlist_id = :wl_id"
+            ),
+            {"wl_id": wl_id},
         )
         count = count_result.mappings().first()["cnt"]
 
-        if count >= WATCHLIST_MAX_SIZE:
+        if count >= WATCHLIST_MAX_ITEMS_PER_LIST:
             raise HTTPException(
                 status_code=400,
-                detail=f"Watchlist is full (max {WATCHLIST_MAX_SIZE} symbols)",
+                detail=f"Watchlist is full (max {WATCHLIST_MAX_ITEMS_PER_LIST} symbols)",
             )
 
         # Check for duplicate
         dup_result = await session.execute(
             text(
-                "SELECT id FROM watchlists WHERE user_id = :user_id AND symbol = :symbol"
+                "SELECT id FROM watchlist_items "
+                "WHERE watchlist_id = :wl_id AND symbol = :symbol"
             ),
-            {"user_id": user_id, "symbol": symbol},
+            {"wl_id": wl_id, "symbol": symbol},
         )
         if dup_result.first() is not None:
             raise HTTPException(
@@ -120,27 +155,27 @@ async def add_symbol(
                 detail=f"{symbol} is already in your watchlist",
             )
 
-        # Get next display_order
+        # Get next position
         max_result = await session.execute(
             text(
-                "SELECT COALESCE(MAX(display_order), -1) AS max_order "
-                "FROM watchlists WHERE user_id = :user_id"
+                "SELECT COALESCE(MAX(position), -1) AS max_pos "
+                "FROM watchlist_items WHERE watchlist_id = :wl_id"
             ),
-            {"user_id": user_id},
+            {"wl_id": wl_id},
         )
-        next_order = max_result.mappings().first()["max_order"] + 1
+        next_pos = max_result.mappings().first()["max_pos"] + 1
 
         now = datetime.now(timezone.utc).isoformat()
         await session.execute(
-            text("""
-                INSERT INTO watchlists (user_id, symbol, added_at, display_order)
-                VALUES (:user_id, :symbol, :added_at, :display_order)
-            """),
+            text(
+                "INSERT INTO watchlist_items (watchlist_id, symbol, position, added_at) "
+                "VALUES (:wl_id, :symbol, :position, :added_at)"
+            ),
             {
-                "user_id": user_id,
+                "wl_id": wl_id,
                 "symbol": symbol,
+                "position": next_pos,
                 "added_at": now,
-                "display_order": next_order,
             },
         )
         await session.commit()
@@ -161,17 +196,20 @@ async def remove_symbol(
     symbol: str,
     user: dict = Depends(get_current_user),
 ) -> dict:
-    """Remove a symbol from the authenticated user's watchlist."""
+    """Remove a symbol from the authenticated user's default watchlist."""
     user_id = int(user["sub"])
     symbol = symbol.strip().upper()
 
     session = await get_session()
     try:
+        wl_id = await _get_default_watchlist_id(user_id, session)
+
         result = await session.execute(
             text(
-                "DELETE FROM watchlists WHERE user_id = :user_id AND symbol = :symbol"
+                "DELETE FROM watchlist_items "
+                "WHERE watchlist_id = :wl_id AND symbol = :symbol"
             ),
-            {"user_id": user_id, "symbol": symbol},
+            {"wl_id": wl_id, "symbol": symbol},
         )
         await session.commit()
 
@@ -197,18 +235,24 @@ async def reorder_watchlist(
     body: ReorderRequest,
     user: dict = Depends(get_current_user),
 ) -> dict:
-    """Reorder the authenticated user's watchlist symbols."""
+    """Reorder the authenticated user's default watchlist symbols."""
     user_id = int(user["sub"])
 
     session = await get_session()
     try:
+        wl_id = await _get_default_watchlist_id(user_id, session)
+
         for i, symbol in enumerate(body.symbols):
             await session.execute(
                 text(
-                    "UPDATE watchlists SET display_order = :order "
-                    "WHERE user_id = :user_id AND symbol = :symbol"
+                    "UPDATE watchlist_items SET position = :position "
+                    "WHERE watchlist_id = :wl_id AND symbol = :symbol"
                 ),
-                {"order": i, "user_id": user_id, "symbol": symbol.strip().upper()},
+                {
+                    "position": i,
+                    "wl_id": wl_id,
+                    "symbol": symbol.strip().upper(),
+                },
             )
         await session.commit()
 

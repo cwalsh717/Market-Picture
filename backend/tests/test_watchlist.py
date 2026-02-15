@@ -7,6 +7,9 @@ Covers:
 - Reorder symbols
 - All endpoints return 401 without auth cookie
 - Company analysis (generation, caching, error handling)
+- Hierarchical watchlist CRUD (list-level and item-level via /api/watchlists)
+- Watchlist prices endpoint
+- Default watchlist seeding
 """
 
 from __future__ import annotations
@@ -61,23 +64,56 @@ async def _create_user(email: str = "test@example.com") -> tuple[int, str]:
     return user_id, token
 
 
+async def _ensure_default_watchlist(user_id: int) -> int:
+    """Ensure the user has a default watchlist, creating one if needed. Returns the watchlist_id."""
+    session = await get_session()
+    try:
+        result = await session.execute(
+            text("SELECT id FROM watchlist_lists WHERE user_id = :uid AND is_default = 1"),
+            {"uid": user_id},
+        )
+        row = result.first()
+        if row:
+            return row[0]
+
+        now = datetime.now(timezone.utc).isoformat()
+        await session.execute(
+            text(
+                "INSERT INTO watchlist_lists (user_id, name, position, is_default, created_at) "
+                "VALUES (:uid, 'My Watchlist', 0, 1, :now)"
+            ),
+            {"uid": user_id, "now": now},
+        )
+        await session.commit()
+
+        result = await session.execute(
+            text("SELECT id FROM watchlist_lists WHERE user_id = :uid AND is_default = 1"),
+            {"uid": user_id},
+        )
+        return result.first()[0]
+    finally:
+        await session.close()
+
+
 async def _add_watchlist_item(
     user_id: int, symbol: str, display_order: int = 0
 ) -> None:
-    """Insert a watchlist row directly."""
+    """Insert a watchlist item into the new schema (watchlist_lists + watchlist_items)."""
+    wl_id = await _ensure_default_watchlist(user_id)
+
     session = await get_session()
     try:
         now = datetime.now(timezone.utc).isoformat()
         await session.execute(
             text("""
-                INSERT INTO watchlists (user_id, symbol, added_at, display_order)
-                VALUES (:user_id, :symbol, :added_at, :order)
+                INSERT INTO watchlist_items (watchlist_id, symbol, position, added_at)
+                VALUES (:wl_id, :symbol, :position, :added_at)
             """),
             {
-                "user_id": user_id,
+                "wl_id": wl_id,
                 "symbol": symbol,
                 "added_at": now,
-                "order": display_order,
+                "position": display_order,
             },
         )
         await session.commit()
@@ -114,14 +150,17 @@ async def _insert_snapshot(symbol: str, price: float, change_pct: float = 0.0) -
 
 
 async def _read_watchlist(user_id: int) -> list[dict]:
-    """Read all watchlist rows for a user."""
+    """Read all watchlist items for a user from the new schema."""
     session = await get_session()
     try:
         result = await session.execute(
-            text(
-                "SELECT * FROM watchlists WHERE user_id = :user_id "
-                "ORDER BY display_order"
-            ),
+            text("""
+                SELECT wi.symbol, wi.position AS display_order, wi.added_at
+                FROM watchlist_items wi
+                JOIN watchlist_lists wl ON wl.id = wi.watchlist_id
+                WHERE wl.user_id = :user_id AND wl.is_default = 1
+                ORDER BY wi.position
+            """),
             {"user_id": user_id},
         )
         return [dict(r) for r in result.mappings().all()]
@@ -142,6 +181,21 @@ from backend.watchlist import (
     reorder_watchlist,
 )
 
+from backend.watchlists import (
+    AddItemRequest,
+    CreateListRequest,
+    ReorderItemsRequest,
+    UpdateListRequest,
+    add_item,
+    create_watchlist,
+    delete_watchlist,
+    list_watchlists,
+    reorder_items,
+    remove_item,
+    update_watchlist,
+    watchlist_prices,
+)
+
 
 def _make_user_dict(user_id: int, email: str = "test@example.com") -> dict:
     """Build a user payload dict matching get_current_user output."""
@@ -157,6 +211,8 @@ class TestListWatchlist:
     @pytest.mark.asyncio
     async def test_empty_watchlist(self):
         user_id, _ = await _create_user()
+        # Ensure a default watchlist exists but is empty
+        await _ensure_default_watchlist(user_id)
         result = await list_watchlist(user=_make_user_dict(user_id))
         assert result["symbols"] == []
         assert result["count"] == 0
@@ -233,6 +289,7 @@ class TestAddSymbol:
     @pytest.mark.asyncio
     async def test_add_success(self):
         user_id, _ = await _create_user()
+        await _ensure_default_watchlist(user_id)
         result = await add_symbol(
             body=AddSymbolRequest(symbol="SPY"),
             user=_make_user_dict(user_id),
@@ -247,6 +304,7 @@ class TestAddSymbol:
     @pytest.mark.asyncio
     async def test_normalizes_to_uppercase(self):
         user_id, _ = await _create_user()
+        await _ensure_default_watchlist(user_id)
         result = await add_symbol(
             body=AddSymbolRequest(symbol="spy"),
             user=_make_user_dict(user_id),
@@ -287,6 +345,7 @@ class TestAddSymbol:
     @pytest.mark.asyncio
     async def test_display_order_increments(self):
         user_id, _ = await _create_user()
+        await _ensure_default_watchlist(user_id)
         await add_symbol(
             body=AddSymbolRequest(symbol="SPY"),
             user=_make_user_dict(user_id),
@@ -315,6 +374,7 @@ class TestAddSymbol:
     @pytest.mark.asyncio
     async def test_crypto_symbol_with_slash(self):
         user_id, _ = await _create_user()
+        await _ensure_default_watchlist(user_id)
         result = await add_symbol(
             body=AddSymbolRequest(symbol="BTC/USD"),
             user=_make_user_dict(user_id),
@@ -345,6 +405,7 @@ class TestRemoveSymbol:
     @pytest.mark.asyncio
     async def test_remove_not_found_returns_404(self):
         user_id, _ = await _create_user()
+        await _ensure_default_watchlist(user_id)
 
         with pytest.raises(Exception) as exc_info:
             await remove_symbol(symbol="FAKE", user=_make_user_dict(user_id))
@@ -421,6 +482,664 @@ class TestReorderWatchlist:
         # GLD=0, SPY=1, QQQ still at 1 (unchanged)
         assert order_map["GLD"] == 0
         assert order_map["SPY"] == 1
+
+
+# ===========================================================================
+# Hierarchical watchlists (/api/watchlists) — list-level CRUD
+# ===========================================================================
+
+
+class TestWatchlistListCRUD:
+    """Tests for the new /api/watchlists list-level endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_list_empty(self):
+        """A new user with no watchlists returns an empty list."""
+        user_id, _ = await _create_user()
+        result = await list_watchlists(user=_make_user_dict(user_id))
+        assert result["watchlists"] == []
+
+    @pytest.mark.asyncio
+    async def test_create_watchlist(self):
+        """Creating a watchlist makes it appear in the listing."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Tech Stocks"),
+            user=_make_user_dict(user_id),
+        )
+        assert "id" in created
+        assert created["name"] == "Tech Stocks"
+        assert created["position"] == 0
+
+        result = await list_watchlists(user=_make_user_dict(user_id))
+        assert len(result["watchlists"]) == 1
+        assert result["watchlists"][0]["name"] == "Tech Stocks"
+
+    @pytest.mark.asyncio
+    async def test_create_multiple_positions_increment(self):
+        """Each new watchlist gets the next position value."""
+        user_id, _ = await _create_user()
+        wl1 = await create_watchlist(
+            body=CreateListRequest(name="First"),
+            user=_make_user_dict(user_id),
+        )
+        wl2 = await create_watchlist(
+            body=CreateListRequest(name="Second"),
+            user=_make_user_dict(user_id),
+        )
+        assert wl1["position"] == 0
+        assert wl2["position"] == 1
+
+    @pytest.mark.asyncio
+    async def test_max_lists_enforced(self):
+        """Cannot create more than WATCHLIST_MAX_LISTS watchlists."""
+        from backend.config import WATCHLIST_MAX_LISTS
+
+        user_id, _ = await _create_user()
+        for i in range(WATCHLIST_MAX_LISTS):
+            await create_watchlist(
+                body=CreateListRequest(name=f"List {i}"),
+                user=_make_user_dict(user_id),
+            )
+
+        with pytest.raises(Exception) as exc_info:
+            await create_watchlist(
+                body=CreateListRequest(name="One Too Many"),
+                user=_make_user_dict(user_id),
+            )
+        assert exc_info.value.status_code == 400
+        assert "maximum" in str(exc_info.value.detail).lower()
+
+    @pytest.mark.asyncio
+    async def test_update_name(self):
+        """Updating a watchlist name persists the change."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Old Name"),
+            user=_make_user_dict(user_id),
+        )
+        wl_id = created["id"]
+
+        result = await update_watchlist(
+            watchlist_id=wl_id,
+            body=UpdateListRequest(name="New Name"),
+            user=_make_user_dict(user_id),
+        )
+        assert result["status"] == "ok"
+
+        listing = await list_watchlists(user=_make_user_dict(user_id))
+        assert listing["watchlists"][0]["name"] == "New Name"
+
+    @pytest.mark.asyncio
+    async def test_update_position(self):
+        """Updating a watchlist position persists the change."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Movable"),
+            user=_make_user_dict(user_id),
+        )
+        wl_id = created["id"]
+
+        await update_watchlist(
+            watchlist_id=wl_id,
+            body=UpdateListRequest(position=5),
+            user=_make_user_dict(user_id),
+        )
+
+        listing = await list_watchlists(user=_make_user_dict(user_id))
+        assert listing["watchlists"][0]["position"] == 5
+
+    @pytest.mark.asyncio
+    async def test_delete_cascades_items(self):
+        """Deleting a watchlist removes its items as well."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Temporary"),
+            user=_make_user_dict(user_id),
+        )
+        wl_id = created["id"]
+
+        # Add some items
+        await add_item(
+            watchlist_id=wl_id,
+            body=AddItemRequest(symbol="AAPL"),
+            user=_make_user_dict(user_id),
+        )
+        await add_item(
+            watchlist_id=wl_id,
+            body=AddItemRequest(symbol="MSFT"),
+            user=_make_user_dict(user_id),
+        )
+
+        # Delete the watchlist
+        result = await delete_watchlist(
+            watchlist_id=wl_id, user=_make_user_dict(user_id)
+        )
+        assert result["status"] == "ok"
+
+        # Verify list is gone
+        listing = await list_watchlists(user=_make_user_dict(user_id))
+        assert len(listing["watchlists"]) == 0
+
+        # Verify items are gone too (check DB directly)
+        session = await get_session()
+        try:
+            items_result = await session.execute(
+                text("SELECT COUNT(*) AS cnt FROM watchlist_items WHERE watchlist_id = :wl_id"),
+                {"wl_id": wl_id},
+            )
+            assert items_result.mappings().first()["cnt"] == 0
+        finally:
+            await session.close()
+
+    @pytest.mark.asyncio
+    async def test_ownership_isolation_update(self):
+        """User B cannot update User A's watchlist (returns 404)."""
+        user_a, _ = await _create_user("owner@example.com")
+        user_b, _ = await _create_user("intruder@example.com")
+
+        created = await create_watchlist(
+            body=CreateListRequest(name="Private"),
+            user=_make_user_dict(user_a, "owner@example.com"),
+        )
+        wl_id = created["id"]
+
+        with pytest.raises(Exception) as exc_info:
+            await update_watchlist(
+                watchlist_id=wl_id,
+                body=UpdateListRequest(name="Hacked"),
+                user=_make_user_dict(user_b, "intruder@example.com"),
+            )
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_ownership_isolation_delete(self):
+        """User B cannot delete User A's watchlist (returns 404)."""
+        user_a, _ = await _create_user("owner2@example.com")
+        user_b, _ = await _create_user("intruder2@example.com")
+
+        created = await create_watchlist(
+            body=CreateListRequest(name="Private"),
+            user=_make_user_dict(user_a, "owner2@example.com"),
+        )
+        wl_id = created["id"]
+
+        with pytest.raises(Exception) as exc_info:
+            await delete_watchlist(
+                watchlist_id=wl_id,
+                user=_make_user_dict(user_b, "intruder2@example.com"),
+            )
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_empty_name_rejected(self):
+        """Creating a watchlist with an empty name returns 400."""
+        user_id, _ = await _create_user()
+
+        with pytest.raises(Exception) as exc_info:
+            await create_watchlist(
+                body=CreateListRequest(name="   "),
+                user=_make_user_dict(user_id),
+            )
+        assert exc_info.value.status_code == 400
+        assert "empty" in str(exc_info.value.detail).lower()
+
+    @pytest.mark.asyncio
+    async def test_update_empty_name_rejected(self):
+        """Updating a watchlist to an empty name returns 400."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Valid"),
+            user=_make_user_dict(user_id),
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            await update_watchlist(
+                watchlist_id=created["id"],
+                body=UpdateListRequest(name="  "),
+                user=_make_user_dict(user_id),
+            )
+        assert exc_info.value.status_code == 400
+
+
+# ===========================================================================
+# Hierarchical watchlists — item-level CRUD
+# ===========================================================================
+
+
+class TestWatchlistItemCRUD:
+    """Tests for /api/watchlists/{id}/items endpoints."""
+
+    @pytest.mark.asyncio
+    async def test_add_item(self):
+        """Adding an item makes it appear in the watchlist listing."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Test"),
+            user=_make_user_dict(user_id),
+        )
+        wl_id = created["id"]
+
+        result = await add_item(
+            watchlist_id=wl_id,
+            body=AddItemRequest(symbol="AAPL"),
+            user=_make_user_dict(user_id),
+        )
+        assert result["status"] == "ok"
+        assert result["symbol"] == "AAPL"
+
+        listing = await list_watchlists(user=_make_user_dict(user_id))
+        items = listing["watchlists"][0]["items"]
+        assert len(items) == 1
+        assert items[0]["symbol"] == "AAPL"
+
+    @pytest.mark.asyncio
+    async def test_add_normalizes_uppercase(self):
+        """Symbols are uppercased on add."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Test"),
+            user=_make_user_dict(user_id),
+        )
+
+        result = await add_item(
+            watchlist_id=created["id"],
+            body=AddItemRequest(symbol="aapl"),
+            user=_make_user_dict(user_id),
+        )
+        assert result["symbol"] == "AAPL"
+
+    @pytest.mark.asyncio
+    async def test_duplicate_item_409(self):
+        """Adding the same symbol twice returns 409."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Test"),
+            user=_make_user_dict(user_id),
+        )
+        wl_id = created["id"]
+
+        await add_item(
+            watchlist_id=wl_id,
+            body=AddItemRequest(symbol="AAPL"),
+            user=_make_user_dict(user_id),
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            await add_item(
+                watchlist_id=wl_id,
+                body=AddItemRequest(symbol="AAPL"),
+                user=_make_user_dict(user_id),
+            )
+        assert exc_info.value.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_max_items_enforced(self):
+        """Cannot add more than WATCHLIST_MAX_ITEMS_PER_LIST items."""
+        from backend.config import WATCHLIST_MAX_ITEMS_PER_LIST
+
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Big List"),
+            user=_make_user_dict(user_id),
+        )
+        wl_id = created["id"]
+
+        # Fill to max by inserting directly (faster than calling add_item 50 times)
+        session = await get_session()
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            for i in range(WATCHLIST_MAX_ITEMS_PER_LIST):
+                await session.execute(
+                    text(
+                        "INSERT INTO watchlist_items (watchlist_id, symbol, position, added_at) "
+                        "VALUES (:wl_id, :symbol, :pos, :added_at)"
+                    ),
+                    {
+                        "wl_id": wl_id,
+                        "symbol": f"SYM{i}",
+                        "pos": i,
+                        "added_at": now,
+                    },
+                )
+            await session.commit()
+        finally:
+            await session.close()
+
+        with pytest.raises(Exception) as exc_info:
+            await add_item(
+                watchlist_id=wl_id,
+                body=AddItemRequest(symbol="OVERFLOW"),
+                user=_make_user_dict(user_id),
+            )
+        assert exc_info.value.status_code == 400
+        assert "full" in str(exc_info.value.detail).lower()
+
+    @pytest.mark.asyncio
+    async def test_remove_item(self):
+        """Removing an item makes it disappear from the listing."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Test"),
+            user=_make_user_dict(user_id),
+        )
+        wl_id = created["id"]
+
+        await add_item(
+            watchlist_id=wl_id,
+            body=AddItemRequest(symbol="AAPL"),
+            user=_make_user_dict(user_id),
+        )
+
+        result = await remove_item(
+            watchlist_id=wl_id,
+            symbol="AAPL",
+            user=_make_user_dict(user_id),
+        )
+        assert result["status"] == "ok"
+
+        listing = await list_watchlists(user=_make_user_dict(user_id))
+        assert len(listing["watchlists"][0]["items"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_remove_not_found_404(self):
+        """Removing a symbol that is not in the watchlist returns 404."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Test"),
+            user=_make_user_dict(user_id),
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            await remove_item(
+                watchlist_id=created["id"],
+                symbol="FAKE",
+                user=_make_user_dict(user_id),
+            )
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_reorder_items(self):
+        """Reordering items changes their position values."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Test"),
+            user=_make_user_dict(user_id),
+        )
+        wl_id = created["id"]
+        user = _make_user_dict(user_id)
+
+        await add_item(watchlist_id=wl_id, body=AddItemRequest(symbol="A"), user=user)
+        await add_item(watchlist_id=wl_id, body=AddItemRequest(symbol="B"), user=user)
+        await add_item(watchlist_id=wl_id, body=AddItemRequest(symbol="C"), user=user)
+
+        result = await reorder_items(
+            watchlist_id=wl_id,
+            body=ReorderItemsRequest(symbols=["C", "A", "B"]),
+            user=user,
+        )
+        assert result["status"] == "ok"
+
+        listing = await list_watchlists(user=user)
+        symbols = [item["symbol"] for item in listing["watchlists"][0]["items"]]
+        assert symbols == ["C", "A", "B"]
+
+    @pytest.mark.asyncio
+    async def test_crypto_slash_symbol(self):
+        """Can add and remove crypto symbols with slashes like BTC/USD."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Crypto"),
+            user=_make_user_dict(user_id),
+        )
+        wl_id = created["id"]
+        user = _make_user_dict(user_id)
+
+        add_result = await add_item(
+            watchlist_id=wl_id,
+            body=AddItemRequest(symbol="BTC/USD"),
+            user=user,
+        )
+        assert add_result["symbol"] == "BTC/USD"
+
+        listing = await list_watchlists(user=user)
+        assert listing["watchlists"][0]["items"][0]["symbol"] == "BTC/USD"
+
+        remove_result = await remove_item(
+            watchlist_id=wl_id, symbol="BTC/USD", user=user
+        )
+        assert remove_result["status"] == "ok"
+
+        listing = await list_watchlists(user=user)
+        assert len(listing["watchlists"][0]["items"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_item_ownership_check(self):
+        """User B cannot add items to User A's watchlist (returns 404)."""
+        user_a, _ = await _create_user("itemowner@example.com")
+        user_b, _ = await _create_user("itemintruder@example.com")
+
+        created = await create_watchlist(
+            body=CreateListRequest(name="Private"),
+            user=_make_user_dict(user_a, "itemowner@example.com"),
+        )
+        wl_id = created["id"]
+
+        with pytest.raises(Exception) as exc_info:
+            await add_item(
+                watchlist_id=wl_id,
+                body=AddItemRequest(symbol="AAPL"),
+                user=_make_user_dict(user_b, "itemintruder@example.com"),
+            )
+        assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_empty_symbol_rejected(self):
+        """Adding an empty symbol returns 400."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Test"),
+            user=_make_user_dict(user_id),
+        )
+
+        with pytest.raises(Exception) as exc_info:
+            await add_item(
+                watchlist_id=created["id"],
+                body=AddItemRequest(symbol="  "),
+                user=_make_user_dict(user_id),
+            )
+        assert exc_info.value.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_add_to_nonexistent_watchlist_404(self):
+        """Adding an item to a non-existent watchlist returns 404."""
+        user_id, _ = await _create_user()
+
+        with pytest.raises(Exception) as exc_info:
+            await add_item(
+                watchlist_id=99999,
+                body=AddItemRequest(symbol="AAPL"),
+                user=_make_user_dict(user_id),
+            )
+        assert exc_info.value.status_code == 404
+
+
+# ===========================================================================
+# Watchlist prices endpoint
+# ===========================================================================
+
+
+class TestWatchlistPrices:
+    """Tests for /api/watchlists/{id}/prices endpoint."""
+
+    @pytest.mark.asyncio
+    async def test_returns_prices(self):
+        """Prices endpoint returns price data for watchlist items."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Priced"),
+            user=_make_user_dict(user_id),
+        )
+        wl_id = created["id"]
+        user = _make_user_dict(user_id)
+
+        await add_item(
+            watchlist_id=wl_id, body=AddItemRequest(symbol="SPY"), user=user
+        )
+        await add_item(
+            watchlist_id=wl_id, body=AddItemRequest(symbol="QQQ"), user=user
+        )
+
+        await _insert_snapshot("SPY", 520.0, 1.5)
+        await _insert_snapshot("QQQ", 450.0, -0.5)
+
+        result = await watchlist_prices(watchlist_id=wl_id, user=user)
+        assert len(result["items"]) == 2
+
+        spy_item = result["items"][0]
+        assert spy_item["symbol"] == "SPY"
+        assert spy_item["price"] == 520.0
+        assert spy_item["change_pct"] == 1.5
+
+        qqq_item = result["items"][1]
+        assert qqq_item["symbol"] == "QQQ"
+        assert qqq_item["price"] == 450.0
+        assert qqq_item["change_pct"] == -0.5
+
+    @pytest.mark.asyncio
+    async def test_null_prices_for_missing(self):
+        """Items without snapshots return None for price fields."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Missing"),
+            user=_make_user_dict(user_id),
+        )
+        wl_id = created["id"]
+        user = _make_user_dict(user_id)
+
+        await add_item(
+            watchlist_id=wl_id, body=AddItemRequest(symbol="AAPL"), user=user
+        )
+
+        result = await watchlist_prices(watchlist_id=wl_id, user=user)
+        assert len(result["items"]) == 1
+        assert result["items"][0]["symbol"] == "AAPL"
+        assert result["items"][0]["price"] is None
+        assert result["items"][0]["change_pct"] is None
+
+    @pytest.mark.asyncio
+    async def test_prices_respects_item_order(self):
+        """Prices are returned in item position order."""
+        user_id, _ = await _create_user()
+        created = await create_watchlist(
+            body=CreateListRequest(name="Ordered"),
+            user=_make_user_dict(user_id),
+        )
+        wl_id = created["id"]
+        user = _make_user_dict(user_id)
+
+        await add_item(
+            watchlist_id=wl_id, body=AddItemRequest(symbol="GLD"), user=user
+        )
+        await add_item(
+            watchlist_id=wl_id, body=AddItemRequest(symbol="SPY"), user=user
+        )
+
+        result = await watchlist_prices(watchlist_id=wl_id, user=user)
+        symbols = [item["symbol"] for item in result["items"]]
+        assert symbols == ["GLD", "SPY"]
+
+    @pytest.mark.asyncio
+    async def test_prices_ownership_check(self):
+        """User B cannot fetch prices for User A's watchlist."""
+        user_a, _ = await _create_user("priceowner@example.com")
+        user_b, _ = await _create_user("pricespy@example.com")
+
+        created = await create_watchlist(
+            body=CreateListRequest(name="Private"),
+            user=_make_user_dict(user_a, "priceowner@example.com"),
+        )
+        wl_id = created["id"]
+
+        with pytest.raises(Exception) as exc_info:
+            await watchlist_prices(
+                watchlist_id=wl_id,
+                user=_make_user_dict(user_b, "pricespy@example.com"),
+            )
+        assert exc_info.value.status_code == 404
+
+
+# ===========================================================================
+# Default watchlist seeding
+# ===========================================================================
+
+
+class TestDefaultSeeding:
+    """Tests for the seed_default_watchlist flow called during registration."""
+
+    @pytest.mark.asyncio
+    async def test_seed_creates_mag7(self):
+        """seed_default_watchlist creates a default list with the Mag 7 symbols."""
+        from backend.config import DEFAULT_WATCHLIST_SYMBOLS
+        from backend.db import seed_default_watchlist
+
+        user_id, _ = await _create_user()
+
+        session = await get_session()
+        try:
+            await seed_default_watchlist(user_id, session)
+            await session.commit()
+        finally:
+            await session.close()
+
+        result = await list_watchlists(user=_make_user_dict(user_id))
+        assert len(result["watchlists"]) == 1
+
+        wl = result["watchlists"][0]
+        assert wl["is_default"] == 1
+        assert wl["name"] == "My Watchlist"
+
+        item_symbols = [item["symbol"] for item in wl["items"]]
+        assert item_symbols == DEFAULT_WATCHLIST_SYMBOLS
+        assert len(item_symbols) == 7
+
+    @pytest.mark.asyncio
+    async def test_seed_item_positions_sequential(self):
+        """Seeded items have sequential positions starting from 0."""
+        from backend.db import seed_default_watchlist
+
+        user_id, _ = await _create_user()
+
+        session = await get_session()
+        try:
+            await seed_default_watchlist(user_id, session)
+            await session.commit()
+        finally:
+            await session.close()
+
+        result = await list_watchlists(user=_make_user_dict(user_id))
+        items = result["watchlists"][0]["items"]
+        positions = [item["position"] for item in items]
+        assert positions == list(range(7))
+
+    @pytest.mark.asyncio
+    async def test_new_schema_tables_exist(self):
+        """Verify the watchlist_lists and watchlist_items tables exist."""
+        session = await get_session()
+        try:
+            # watchlist_lists
+            result = await session.execute(
+                text("SELECT COUNT(*) AS cnt FROM watchlist_lists")
+            )
+            assert result.mappings().first()["cnt"] >= 0
+
+            # watchlist_items
+            result = await session.execute(
+                text("SELECT COUNT(*) AS cnt FROM watchlist_items")
+            )
+            assert result.mappings().first()["cnt"] >= 0
+        finally:
+            await session.close()
 
 
 # ---------------------------------------------------------------------------
@@ -518,23 +1237,25 @@ class TestAuthRequired:
 class TestSchema:
     @pytest.mark.asyncio
     async def test_unique_constraint_prevents_duplicate(self):
-        """The unique index on (user_id, symbol) should prevent duplicates."""
+        """The unique index on (watchlist_id, symbol) should prevent duplicates."""
         user_id, _ = await _create_user()
         await _add_watchlist_item(user_id, "SPY", 0)
+
+        wl_id = await _ensure_default_watchlist(user_id)
 
         session = await get_session()
         try:
             with pytest.raises(Exception):
                 await session.execute(
                     text("""
-                        INSERT INTO watchlists (user_id, symbol, added_at, display_order)
-                        VALUES (:user_id, :symbol, :added_at, :order)
+                        INSERT INTO watchlist_items (watchlist_id, symbol, position, added_at)
+                        VALUES (:wl_id, :symbol, :position, :added_at)
                     """),
                     {
-                        "user_id": user_id,
+                        "wl_id": wl_id,
                         "symbol": "SPY",
+                        "position": 1,
                         "added_at": datetime.now(timezone.utc).isoformat(),
-                        "order": 1,
                     },
                 )
                 await session.commit()
@@ -627,3 +1348,17 @@ class TestWatchlistConfig:
 
         assert isinstance(WATCHLIST_MAX_SIZE, int)
         assert WATCHLIST_MAX_SIZE == 50
+
+    def test_new_config_constants_exist(self):
+        from backend.config import (
+            DEFAULT_WATCHLIST_SYMBOLS,
+            WATCHLIST_MAX_ITEMS_PER_LIST,
+            WATCHLIST_MAX_LISTS,
+        )
+
+        assert isinstance(WATCHLIST_MAX_LISTS, int)
+        assert WATCHLIST_MAX_LISTS == 20
+        assert isinstance(WATCHLIST_MAX_ITEMS_PER_LIST, int)
+        assert WATCHLIST_MAX_ITEMS_PER_LIST == 50
+        assert isinstance(DEFAULT_WATCHLIST_SYMBOLS, list)
+        assert len(DEFAULT_WATCHLIST_SYMBOLS) == 7

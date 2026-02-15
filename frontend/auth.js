@@ -320,12 +320,7 @@
         '</div>' +
         '<div class="auth-field">' +
           '<label for="account-email-password">Confirm password</label>' +
-          '<div class="auth-pw-wrapper">' +
-            '<input id="account-email-password" type="password" required>' +
-            '<button type="button" class="auth-pw-toggle" data-target="account-email-password" tabindex="-1">' +
-              EYE_CLOSED_SVG +
-            '</button>' +
-          '</div>' +
+          '<input id="account-email-password" type="password" required autocomplete="off">' +
         '</div>' +
         '<div class="account-feedback" id="email-feedback"></div>' +
         '<button class="account-btn" id="account-email-submit">Update Email</button>' +
@@ -335,12 +330,7 @@
         '<div class="account-section-title">Change Password</div>' +
         '<div class="auth-field">' +
           '<label for="account-current-pw">Current password</label>' +
-          '<div class="auth-pw-wrapper">' +
-            '<input id="account-current-pw" type="password" required>' +
-            '<button type="button" class="auth-pw-toggle" data-target="account-current-pw" tabindex="-1">' +
-              EYE_CLOSED_SVG +
-            '</button>' +
-          '</div>' +
+          '<input id="account-current-pw" type="password" required autocomplete="off">' +
         '</div>' +
         '<div class="auth-field">' +
           '<label for="account-new-pw">New password</label>' +

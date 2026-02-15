@@ -1426,6 +1426,7 @@
   flex-direction: column;
   transition: width 0.2s ease;
   overflow: hidden;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.5);
 }
 .sidebar-expanded { width: 280px; }
 .sidebar-collapsed { width: 48px; }
@@ -1508,14 +1509,166 @@
 }
 .sidebar-collapsed-content:hover { color: #e5e7eb; }
 
-/* Main content shift */
-body.has-sidebar #main-content {
-  margin-left: 280px;
-  transition: margin-left 0.2s ease;
+/* ── Sidebar widgets ─────────────────────────────────────────────── */
+
+.sidebar-add-btn {
+  background: none;
+  border: 1px solid #374151;
+  color: #6b7280;
+  width: 24px;
+  height: 24px;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
 }
-body.has-sidebar.sidebar-collapsed #main-content {
-  margin-left: 48px;
+.sidebar-add-btn:hover { color: #e5e7eb; border-color: #6b7280; }
+
+.sidebar-add-dropdown {
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 0.375rem;
+  overflow: hidden;
+  margin: 0.25rem 0.5rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
+.sidebar-add-dropdown.hidden { display: none; }
+
+.sidebar-add-option {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  color: #e5e7eb;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.sidebar-add-option:hover { background: #374151; }
+
+.sidebar-widget {
+  border-bottom: 1px solid #1f2937;
+}
+
+.sidebar-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  background: rgba(255,255,255,0.02);
+}
+
+.sidebar-widget-name {
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: #d1d5db;
+  cursor: pointer;
+}
+.sidebar-widget-name:hover { color: #f3f4f6; }
+
+.sidebar-widget-collapse,
+.sidebar-widget-menu-btn {
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 0.75rem;
+  padding: 0.125rem 0.25rem;
+  transition: color 0.15s;
+}
+.sidebar-widget-collapse:hover,
+.sidebar-widget-menu-btn:hover { color: #e5e7eb; }
+
+.sidebar-widget-menu {
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 0.375rem;
+  margin: 0 0.5rem 0.25rem;
+  overflow: hidden;
+}
+.sidebar-widget-menu.hidden { display: none; }
+
+.sidebar-widget-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.375rem 0.75rem;
+  background: none;
+  border: none;
+  color: #e5e7eb;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.sidebar-widget-menu-item:hover { background: #374151; }
+
+.sidebar-widget-body { padding: 0; }
+.sidebar-widget-body.hidden { display: none; }
+
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  text-decoration: none;
+  color: #e5e7eb;
+  cursor: pointer;
+  transition: background 0.15s;
+  position: relative;
+}
+.sidebar-item:hover { background: rgba(255,255,255,0.04); }
+
+.sidebar-item-remove {
+  display: none;
+  background: none;
+  border: none;
+  color: #6b7280;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0 0.25rem;
+  transition: color 0.15s;
+  position: absolute;
+  right: 0.5rem;
+}
+.sidebar-item:hover .sidebar-item-remove { display: block; }
+.sidebar-item-remove:hover { color: #ef4444; }
+
+.sidebar-item.drag-over {
+  border-top: 2px solid #3b82f6;
+}
+
+.sidebar-add-ticker {
+  padding: 0.375rem 0.75rem;
+}
+
+.sidebar-ticker-input {
+  width: 100%;
+  background: #111827;
+  border: 1px solid #374151;
+  border-radius: 0.375rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  color: #e5e7eb;
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+.sidebar-ticker-input::placeholder { color: #4b5563; }
+.sidebar-ticker-input:focus { border-color: #6b7280; }
+
+.sidebar-rename-input {
+  background: #111827;
+  border: 1px solid #6b7280;
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #e5e7eb;
+  outline: none;
+  width: 120px;
+}
+
+/* Sidebar overlays content (no margin shift) — dashboard stays centered */
 
 /* ── Mobile bottom sheet ──────────────────────────────────────────── */
 
@@ -1590,7 +1743,6 @@ body.has-sidebar.sidebar-collapsed #main-content {
 
 @media (max-width: 640px) {
   .sidebar { display: none !important; }
-  body.has-sidebar #main-content { margin-left: 0 !important; }
 }
 @media (min-width: 641px) {
   .mobile-watchlist-btn { display: none !important; }

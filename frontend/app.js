@@ -490,6 +490,11 @@ async function init() {
     renderNarrative(summaryData.summary_text, summaryData.date, summaryData.period);
   }
 
+  // Expose snapshot for sidebar widget to read
+  if (snapshotData) {
+    window.bradanSnapshotData = snapshotData;
+  }
+
   // Render asset sections from snapshot
   let assets = null;
   if (snapshotData && snapshotData.assets) {

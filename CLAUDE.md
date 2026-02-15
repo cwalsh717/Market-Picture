@@ -44,7 +44,8 @@ Market-Picture/
 │   ├── jobs/
 │   │   ├── scheduler.py         # APScheduler setup (7 scheduled jobs)
 │   │   └── daily_update.py      # Orchestrates: fetch → compute → summarize → archive
-│   ├── watchlist.py               # Watchlist CRUD API + company analysis endpoint
+│   ├── watchlists.py              # Hierarchical watchlist CRUD API (multi-list)
+│   ├── watchlist.py               # Backward-compat shim (singular /api/watchlist → default list)
 │   ├── tests/
 │   │   ├── test_regime.py       # Regime classification tests
 │   │   ├── test_summary.py      # Summary/narrative tests
@@ -55,7 +56,7 @@ Market-Picture/
 │   ├── index.html               # Main dashboard (the landing page)
 │   ├── app.js                   # Dashboard logic (regime, cards, lazy sparklines)
 │   ├── auth.js                  # Auth modal, user dropdown, account settings + global auth state
-│   ├── sidebar.js               # Persistent watchlist sidebar (desktop) + bottom sheet (mobile)
+│   ├── sidebar.js               # Widget panel sidebar (desktop) + bottom sheet (mobile)
 │   ├── watchlist.html           # Watchlist management page
 │   ├── watchlist.js             # Watchlist page logic (search/add, reorder, analysis)
 │   ├── chart.html               # Symbol deep-dive chart page
@@ -106,7 +107,9 @@ Market-Picture/
 | `summaries` | LLM market summaries (date, period, regime_label, regime_signals_json) |
 | `narrative_archive` | Historical narratives (regime, signals, movers snapshot) |
 | `users` | User accounts (email, password_hash, created_at) |
-| `watchlists` | Saved symbols per user (user_id, symbol, display_order) — unique on (user_id, symbol) |
+| `watchlist_lists` | Named watchlists per user (user_id, name, position, is_default) |
+| `watchlist_items` | Symbols within a watchlist (watchlist_id, symbol, position) — unique on (watchlist_id, symbol) |
+| `watchlists` | Legacy flat watchlist table (kept for migration, no longer used by code) |
 | `technical_signals` | Technical indicators (RSI-14, ATR-14, SMA-50, SMA-200 per symbol) |
 | `company_analyses` | Cached per-symbol Claude analyses (symbol, user_id, date) — unique on (symbol, user_id, date) |
 | `search_cache` | Cached symbol search results |
@@ -137,14 +140,26 @@ Market-Picture/
 | PUT | `/api/auth/change-password` | Update password (requires current password) |
 | PUT | `/api/auth/change-email` | Update email (requires password), re-issues JWT |
 
-### Watchlist (watchlist.py) — all require auth
+### Watchlists (watchlists.py) — all require auth
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| GET | `/api/watchlist` | List user's watchlist with latest prices |
-| POST | `/api/watchlist` | Add symbol (409 on duplicate, 400 at max size) |
-| DELETE | `/api/watchlist/{symbol}` | Remove symbol (404 if not found) |
-| PUT | `/api/watchlist/reorder` | Bulk update display_order |
-| POST | `/api/watchlist/{symbol}/analysis` | Generate on-demand Claude company analysis (cached per day) |
+| GET | `/api/watchlists` | List all watchlists + items for user |
+| POST | `/api/watchlists` | Create new empty watchlist |
+| PUT | `/api/watchlists/{id}` | Update name/position |
+| DELETE | `/api/watchlists/{id}` | Delete watchlist + cascade items |
+| POST | `/api/watchlists/{id}/items` | Add ticker to watchlist |
+| DELETE | `/api/watchlists/{id}/items/{symbol}` | Remove ticker |
+| PUT | `/api/watchlists/{id}/items/reorder` | Reorder items within list |
+| GET | `/api/watchlists/{id}/prices` | Price data for all symbols in list |
+
+### Watchlist backward-compat (watchlist.py) — all require auth
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| GET | `/api/watchlist` | List default watchlist with prices (old format) |
+| POST | `/api/watchlist` | Add symbol to default list |
+| DELETE | `/api/watchlist/{symbol}` | Remove from default list |
+| PUT | `/api/watchlist/reorder` | Reorder default list |
+| POST | `/api/watchlist/{symbol}/analysis` | On-demand Claude company analysis (cached per day) |
 
 ## Scheduled Jobs (7 total, ET timezone)
 
@@ -234,8 +249,8 @@ Email + password authentication with JWT tokens stored in httpOnly cookies.
 - Asset class sections: Equities, International, Rates, Credit, Currencies, Commodities, Critical Minerals, Crypto
 - Asset cards with prices, change %, explainer tooltips, lazy-loaded sparklines
 - Search bar: Type any symbol → on-demand fetch → chart page (with watchlist star when logged in)
-- Persistent watchlist sidebar (desktop, logged in only): collapsible (280px/48px), per-symbol price/change rows
-- Mobile watchlist bottom sheet (logged in only): floating button → slide-up drawer
+- Widget panel sidebar (desktop, logged in only): overlays content, collapsible, multiple watchlist widgets with inline management
+- Mobile widget bottom sheet (logged in only): floating button → slide-up drawer with same widget content
 - No login required for core content
 
 ### Page 2: Chart Page (symbol deep dive)
@@ -266,8 +281,9 @@ Email + password authentication with JWT tokens stored in httpOnly cookies.
 
 ### Logged-In Features (free account):
 - User account management (change email, change password)
-- Watchlists: Save symbols from search dropdown, chart page, or watchlist page
-- Persistent sidebar (desktop) / bottom sheet (mobile) showing watchlist on dashboard
+- Multiple named watchlists (create, rename, delete, reorder) — default "My Watchlist" seeded with Mag 7 on registration
+- Watchlist widget panel sidebar (desktop) / bottom sheet (mobile) with inline add/remove/reorder/rename
+- Add symbols from search dropdown, chart page star, or inline in sidebar widgets
 - On-demand Claude company analysis per watchlist symbol
 - Alerts (future): Regime change, VIX spike, price thresholds via email
 
@@ -282,17 +298,19 @@ All V2 phases delivered:
 
 ## V3 Progress
 
-### Phase 11: Watchlists (Complete)
-The first logged-in feature. Users save symbols and get a personalized view of their portfolio.
+### Phase 11: Watchlists + Widget Panel (Complete)
+Multi-list watchlists with inline management via an extensible widget panel sidebar.
 
 **What was built:**
-- **Backend:** Watchlist CRUD API (add, remove, reorder, list with price join), on-demand Claude company analysis with daily caching per (symbol, user_id, date), unique constraint on watchlists, new CompanyAnalysis model
-- **Dashboard sidebar:** Persistent collapsible sidebar on desktop (280px expanded / 48px collapsed, localStorage-persisted), mobile bottom sheet with floating trigger button
-- **Watchlist page:** Dedicated management page with search/add, per-symbol cards, reorder arrows, "Generate Analysis" button for Claude company briefings
-- **Add-to-watchlist UI:** Star buttons on search dropdown and chart page header (toggle add/remove)
-- **Auth state:** Global `window.bradanUser` + `bradan-auth-ready` custom event for cross-module auth detection
-- **Nav:** Watchlist link always visible (CTA for logged-out users)
-- **Tests:** 27 new tests (125 total), zero regressions
+- **Backend data model:** Two-table hierarchical schema (`watchlist_lists` + `watchlist_items`) replacing flat `watchlists` table, with data migration and Mag 7 default seeding on registration
+- **New API (`/api/watchlists`):** Full CRUD for lists (create, update, delete) and items (add, remove, reorder, prices), all with ownership verification
+- **Backward-compat shim (`/api/watchlist`):** Old singular endpoints delegate to user's default watchlist — `watchlist.html`, `chart.js`, `nav.js` unchanged
+- **Widget panel sidebar:** Extensible sidebar with "+" button to create new watchlists, per-widget collapsible sections, inline add/remove/rename, HTML5 drag-to-reorder, overlay CSS (no content shift)
+- **Price integration:** Sidebar reads `window.bradanSnapshotData` for dashboard symbols, falls back to `/api/watchlists/{id}/prices` for others
+- **Mobile:** Bottom sheet with same widget panel content
+- **Company analysis:** On-demand Claude analysis per symbol (cached per day), unchanged
+- **Auth state:** Global `window.bradanUser` + `bradan-auth-ready` custom event
+- **Tests:** 57 watchlist tests (155 total), zero regressions
 
 **Note:** Company analysis prompt currently uses snapshot + technicals + regime context. Will be enriched with fundamentals data when Phase 12 adds financial data APIs.
 

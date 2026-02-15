@@ -30,6 +30,9 @@ COOKIE_SECURE: bool = os.getenv("COOKIE_SECURE", "true").lower() == "true"
 # Watchlist
 # ---------------------------------------------------------------------------
 WATCHLIST_MAX_SIZE: int = 50
+DEFAULT_WATCHLIST_SYMBOLS: list[str] = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"]
+WATCHLIST_MAX_LISTS: int = 20
+WATCHLIST_MAX_ITEMS_PER_LIST: int = 50
 
 # ---------------------------------------------------------------------------
 # Market hours (all times in ET, 24-hour format)

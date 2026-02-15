@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import Float, Integer, String, Text, UniqueConstraint, text
@@ -131,16 +132,27 @@ class User(Base):
     created_at: Mapped[str] = mapped_column(String, nullable=False)
 
 
-class Watchlist(Base):
-    __tablename__ = "watchlists"
+class WatchlistList(Base):
+    __tablename__ = "watchlist_lists"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    symbol: Mapped[str] = mapped_column(String, nullable=False)
-    added_at: Mapped[str] = mapped_column(String, nullable=False)
-    display_order: Mapped[int] = mapped_column(Integer, default=0)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    is_default: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[str] = mapped_column(String, nullable=False)
 
-    __table_args__ = (UniqueConstraint("user_id", "symbol"),)
+
+class WatchlistItem(Base):
+    __tablename__ = "watchlist_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    watchlist_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    added_at: Mapped[str] = mapped_column(String, nullable=False)
+
+    __table_args__ = (UniqueConstraint("watchlist_id", "symbol"),)
 
 
 class CompanyAnalysis(Base):
@@ -262,18 +274,6 @@ async def _run_migrations() -> None:
         except Exception:
             await session.rollback()
 
-        # watchlists: unique constraint (user_id, symbol)
-        try:
-            await session.execute(
-                text(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS uix_watchlists_user_symbol "
-                    "ON watchlists (user_id, symbol)"
-                )
-            )
-            await session.commit()
-        except Exception:
-            await session.rollback()
-
         # company_analyses table
         dialect = get_dialect()
         pk_col = "id SERIAL PRIMARY KEY" if dialect == "postgresql" else "id INTEGER PRIMARY KEY AUTOINCREMENT"
@@ -297,5 +297,89 @@ async def _run_migrations() -> None:
             await session.commit()
         except Exception:
             await session.rollback()
+
+        # watchlist_lists + watchlist_items: migrate from legacy watchlists table
+        try:
+            # Check if migration already ran (watchlist_lists has data)
+            check = await session.execute(
+                text("SELECT COUNT(*) FROM watchlist_lists")
+            )
+            count = check.scalar()
+            if count == 0:
+                # Get all distinct user_ids from legacy watchlists table
+                users_result = await session.execute(
+                    text("SELECT DISTINCT user_id FROM watchlists")
+                )
+                user_ids = [row[0] for row in users_result.fetchall()]
+
+                now = datetime.now(timezone.utc).isoformat()
+
+                for uid in user_ids:
+                    # Create default watchlist list via ORM
+                    wl = WatchlistList(
+                        user_id=uid,
+                        name="My Watchlist",
+                        position=0,
+                        is_default=1,
+                        created_at=now,
+                    )
+                    session.add(wl)
+                    await session.flush()
+                    await session.refresh(wl)
+
+                    # Copy symbols from legacy table
+                    symbols_result = await session.execute(
+                        text(
+                            "SELECT symbol, display_order, added_at "
+                            "FROM watchlists WHERE user_id = :uid "
+                            "ORDER BY display_order"
+                        ),
+                        {"uid": uid},
+                    )
+                    for row in symbols_result.fetchall():
+                        item = WatchlistItem(
+                            watchlist_id=wl.id,
+                            symbol=row[0],
+                            position=row[1],
+                            added_at=row[2],
+                        )
+                        session.add(item)
+
+                await session.commit()
+                logger.info(
+                    "Migrated %d users from legacy watchlists to watchlist_lists/items",
+                    len(user_ids),
+                )
+        except Exception:
+            await session.rollback()
+            logger.warning(
+                "Watchlist migration skipped or failed — will retry on next startup",
+                exc_info=True,
+            )
     finally:
         await session.close()
+
+
+async def seed_default_watchlist(user_id: int, session: AsyncSession) -> None:
+    """Create the default Mag 7 watchlist for a new user."""
+    from backend.config import DEFAULT_WATCHLIST_SYMBOLS
+
+    now = datetime.now(timezone.utc).isoformat()
+    wl = WatchlistList(
+        user_id=user_id,
+        name="My Watchlist",
+        position=0,
+        is_default=1,
+        created_at=now,
+    )
+    session.add(wl)
+    await session.flush()  # get wl.id
+
+    for i, symbol in enumerate(DEFAULT_WATCHLIST_SYMBOLS):
+        item = WatchlistItem(
+            watchlist_id=wl.id,
+            symbol=symbol,
+            position=i,
+            added_at=now,
+        )
+        session.add(item)
