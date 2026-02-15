@@ -1,8 +1,8 @@
-# Market Picture
+# Bradán -- Daily Market Intelligence
 
-Like checking the weather, but for markets. Open it, see the regime, read the story, go on with your day.
+An Bradán Feasa. The Salmon of Knowledge.
 
-Market Picture is a cross-asset market dashboard that tracks 27 instruments across equities, rates, credit, currencies, commodities, critical minerals, and crypto. It classifies the current market regime as **RISK-ON**, **RISK-OFF**, or **MIXED**, and generates a plain-English narrative explaining what's happening -- twice daily, powered by Claude.
+Bradán is a cross-asset market dashboard that tracks 27 instruments across equities, rates, credit, currencies, commodities, critical minerals, and crypto. It classifies the current market regime as **RISK-ON**, **RISK-OFF**, or **MIXED**, and generates a plain-English narrative explaining what's happening -- twice daily, powered by Claude.
 
 No login required. The landing page is the product.
 

@@ -1,4 +1,4 @@
-/* Market Picture — Journal (narrative archive) */
+/* Bradán — Journal (narrative archive) */
 
 const API_BASE = "";
 

@@ -54,7 +54,7 @@ async def lifespan(app: FastAPI):
         _startup_backfill(app.state.twelve_data)
     )
 
-    logger.info("Market Picture started")
+    logger.info("Bradán started")
     yield
 
     # Cancel backfill if still running
@@ -69,7 +69,7 @@ async def lifespan(app: FastAPI):
     await app.state.fred.close()
     await app.state.twelve_data.close()
     await close_db()
-    logger.info("Market Picture stopped")
+    logger.info("Bradán stopped")
 
 
 async def _startup_backfill(provider: TwelveDataProvider) -> None:
@@ -84,7 +84,7 @@ async def _startup_backfill(provider: TwelveDataProvider) -> None:
         logger.exception("Startup backfill failed")
 
 
-app = FastAPI(title="Market Picture", lifespan=lifespan)
+app = FastAPI(title="Bradán", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

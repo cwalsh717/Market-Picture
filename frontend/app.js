@@ -1,4 +1,4 @@
-/* Market Picture — frontend entry point */
+/* Bradán — frontend entry point */
 
 const API_BASE = ""; // empty = same origin; set to "http://localhost:8000" for dev
 

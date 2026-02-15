@@ -36,6 +36,14 @@
   color: #fff;
 }
 
+.nav-logo-img {
+  height: 28px;
+  width: auto;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 0.375rem;
+}
+
 .nav-links {
   display: flex;
   gap: 0.25rem;

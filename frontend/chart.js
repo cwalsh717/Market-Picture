@@ -1,4 +1,4 @@
-/* Market Picture — Symbol Deep-Dive Chart */
+/* Bradán — Symbol Deep-Dive Chart */
 
 const API_BASE = "";
 
@@ -47,7 +47,7 @@ function init() {
   const params = new URLSearchParams(window.location.search);
   currentSymbol = params.get("symbol") || "SPY";
 
-  document.title = `${currentSymbol} — Market Picture`;
+  document.title = `${currentSymbol} — Bradán`;
   document.getElementById("chart-title").textContent = currentSymbol;
 
   buildControls();

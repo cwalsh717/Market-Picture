@@ -1,4 +1,4 @@
-/* Market Picture — Shared navigation bar */
+/* Bradán — Shared navigation bar */
 
 (function () {
   const API_BASE = "";
@@ -41,7 +41,7 @@
     container.innerHTML = `
       <div class="nav-inner">
         <div class="nav-left">
-          <a href="/" class="nav-logo">Market Picture</a>
+          <a href="/" class="nav-logo"><img src="/static/bradan-logo.jpg" alt="" class="nav-logo-img" onerror="this.style.display='none'">Bradán</a>
           <div class="nav-links">
             <a href="/" class="${linkClass("dashboard")}">Dashboard</a>
             <a href="/chart.html" class="${linkClass("chart")}">Chart</a>
