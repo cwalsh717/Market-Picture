@@ -105,9 +105,23 @@ async def health() -> dict:
 
 @app.get("/api/snapshot")
 async def snapshot() -> dict:
-    """Return the most recent price snapshot for all assets, grouped by asset class."""
+    """Return the most recent price snapshot for all assets, grouped by asset class.
+
+    Guarantees every expected dashboard symbol appears in the response.
+    Symbols missing from market_snapshots fall back to the daily_history
+    table (marked ``is_stale: true``).  Symbols absent from both tables
+    are still included with ``price: null``.
+    """
+    # Build the full set of expected dashboard symbols.
+    expected_symbols: set[str] = set()
+    for symbols in ASSETS.values():
+        expected_symbols.update(symbols)
+    expected_symbols.update(FRED_SERIES)
+    expected_symbols.add("SPREAD_2S10S")
+
     session = await get_session()
     try:
+        # 1. Fetch latest snapshot rows (existing query).
         result = await session.execute(
             text("""
                 SELECT s.symbol, s.asset_class, s.price, s.change_pct,
@@ -120,26 +134,111 @@ async def snapshot() -> dict:
             """)
         )
         rows = result.mappings().all()
+
+        # Track which symbols the snapshot already covers.
+        seen_symbols: set[str] = set()
+
+        groups: dict[str, list[dict]] = {}
+        last_updated = ""
+
+        for row in rows:
+            asset_class = row["asset_class"]
+            symbol = row["symbol"]
+            seen_symbols.add(symbol)
+            entry = {
+                "symbol": symbol,
+                "name": _SYMBOL_NAMES.get(symbol, symbol),
+                "price": row["price"],
+                "change_pct": row["change_pct"],
+                "change_abs": row["change_abs"],
+                "timestamp": row["timestamp"],
+                "is_stale": False,
+            }
+            groups.setdefault(asset_class, []).append(entry)
+            if row["timestamp"] and row["timestamp"] > last_updated:
+                last_updated = row["timestamp"]
+
+        # 2. Identify missing symbols and attempt daily_history fallback.
+        missing_symbols = expected_symbols - seen_symbols
+
+        history_map: dict[str, list[dict]] = {}
+        if missing_symbols:
+            placeholders = ", ".join(
+                f":s{i}" for i in range(len(missing_symbols))
+            )
+            params = {
+                f"s{i}": sym
+                for i, sym in enumerate(sorted(missing_symbols))
+            }
+            hist_result = await session.execute(
+                text(f"""
+                    SELECT symbol, date, close FROM (
+                        SELECT symbol, date, close,
+                               ROW_NUMBER() OVER (
+                                   PARTITION BY symbol ORDER BY date DESC
+                               ) AS rn
+                        FROM daily_history
+                        WHERE symbol IN ({placeholders})
+                    ) ranked
+                    WHERE rn <= 2
+                """),
+                params,
+            )
+            for hrow in hist_result.mappings().all():
+                history_map.setdefault(hrow["symbol"], []).append(
+                    {"date": hrow["date"], "close": hrow["close"]}
+                )
+
+        # 3. Build fallback entries for every missing symbol.
+        for symbol in sorted(missing_symbols):
+            asset_class = SYMBOL_ASSET_CLASS.get(symbol, "other")
+            hist_rows = history_map.get(symbol, [])
+
+            # Sort descending by date so index 0 is the latest.
+            hist_rows.sort(key=lambda r: r["date"], reverse=True)
+
+            if len(hist_rows) >= 2:
+                last_close = hist_rows[0]["close"]
+                prev_close = hist_rows[1]["close"]
+                if prev_close and prev_close != 0:
+                    change_pct = (last_close - prev_close) / prev_close * 100
+                    change_abs = last_close - prev_close
+                else:
+                    change_pct = None
+                    change_abs = None
+                entry = {
+                    "symbol": symbol,
+                    "name": _SYMBOL_NAMES.get(symbol, symbol),
+                    "price": last_close,
+                    "change_pct": round(change_pct, 4) if change_pct is not None else None,
+                    "change_abs": round(change_abs, 4) if change_abs is not None else None,
+                    "timestamp": hist_rows[0]["date"],
+                    "is_stale": True,
+                }
+            elif len(hist_rows) == 1:
+                entry = {
+                    "symbol": symbol,
+                    "name": _SYMBOL_NAMES.get(symbol, symbol),
+                    "price": hist_rows[0]["close"],
+                    "change_pct": None,
+                    "change_abs": None,
+                    "timestamp": hist_rows[0]["date"],
+                    "is_stale": True,
+                }
+            else:
+                entry = {
+                    "symbol": symbol,
+                    "name": _SYMBOL_NAMES.get(symbol, symbol),
+                    "price": None,
+                    "change_pct": None,
+                    "change_abs": None,
+                    "timestamp": None,
+                    "is_stale": True,
+                }
+
+            groups.setdefault(asset_class, []).append(entry)
     finally:
         await session.close()
-
-    groups: dict[str, list[dict]] = {}
-    last_updated = ""
-
-    for row in rows:
-        asset_class = row["asset_class"]
-        symbol = row["symbol"]
-        entry = {
-            "symbol": symbol,
-            "name": _SYMBOL_NAMES.get(symbol, symbol),
-            "price": row["price"],
-            "change_pct": row["change_pct"],
-            "change_abs": row["change_abs"],
-            "timestamp": row["timestamp"],
-        }
-        groups.setdefault(asset_class, []).append(entry)
-        if row["timestamp"] and row["timestamp"] > last_updated:
-            last_updated = row["timestamp"]
 
     return {"last_updated": last_updated, "assets": groups}
 

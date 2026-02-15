@@ -207,6 +207,7 @@ function formatPrice(symbol, price) {
 }
 
 function renderAssetCard(asset) {
+  const hasPrice = asset.price != null && !isNaN(asset.price);
   const pct = Number(asset.change_pct) || 0;
   const positive = pct >= 0;
   const arrow = positive ? "\u25B2" : "\u25BC";
@@ -214,9 +215,15 @@ function renderAssetCard(asset) {
   const colorClass = positive ? "text-emerald-400" : "text-red-400";
   const explainer = ASSET_EXPLAINERS[asset.symbol] || "";
   const chartUrl = `/chart.html?symbol=${encodeURIComponent(asset.symbol)}`;
+  const staleStyle = asset.is_stale ? "opacity:0.8;" : "";
+  const staleLabel = asset.is_stale ? `<span class="text-gray-500 text-xs ml-1">Prev Close</span>` : "";
+  const priceDisplay = hasPrice ? formatPrice(asset.symbol, asset.price) : "\u2014";
+  const changeDisplay = hasPrice
+    ? `<span class="text-sm font-medium ${colorClass}">${arrow} ${sign}${pct.toFixed(2)}%</span>`
+    : `<span class="text-xs text-gray-500">No data</span>`;
 
   return `
-    <a href="${chartUrl}" class="asset-card block" style="text-decoration:none;color:inherit;">
+    <a href="${chartUrl}" class="asset-card block" style="text-decoration:none;color:inherit;${staleStyle}">
       <div class="flex items-start justify-between gap-2 mb-1">
         <div class="min-w-0">
           <div class="flex items-center gap-1.5">
@@ -230,8 +237,8 @@ function renderAssetCard(asset) {
         </div>
       </div>
       <div class="flex items-baseline justify-between gap-2 mt-2">
-        <span class="text-base font-medium text-gray-200">${formatPrice(asset.symbol, asset.price)}</span>
-        <span class="text-sm font-medium ${colorClass}">${arrow} ${sign}${pct.toFixed(2)}%</span>
+        <span class="text-base font-medium text-gray-200">${priceDisplay}${staleLabel}</span>
+        ${changeDisplay}
       </div>
       ${explainer ? `<div class="info-tooltip hidden text-xs text-gray-400">${escapeHtml(explainer)}</div>` : ""}
     </a>`;
