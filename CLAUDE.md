@@ -161,14 +161,7 @@ When a user searches for or clicks on any symbol, they open a full chart page.
 
 ## v2 Build Order
 
-### Phase 5: PostgreSQL Migration (next)
-- Provision PostgreSQL on Railway
-- Migrate existing schema (quotes, summaries)
-- Add tables: daily_history, narrative_archive, users, watchlists
-- Update db.py to use SQLAlchemy with PostgreSQL
-- Update DATABASE_URL env var
-- Test all existing endpoints
-
+### Phase 5: PostgreSQL Migration — DONE
 ### Phase 6: Narrative Archive — DONE
 ### Phase 7: On-Demand Historical Data Cache — DONE
 ### Phase 8: Chart Page + Better Charting — DONE
