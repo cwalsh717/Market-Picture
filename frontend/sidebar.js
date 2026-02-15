@@ -280,6 +280,8 @@
     if (!watchlistsData.length && !window.bradanUser) {
       container.innerHTML = '';
       container.className = '';
+      var mainContent = document.getElementById("main-content");
+      if (mainContent) mainContent.style.marginLeft = "";
       return;
     }
 
@@ -287,6 +289,8 @@
     if (!window.bradanUser) {
       container.innerHTML = '';
       container.className = '';
+      var mainContent = document.getElementById("main-content");
+      if (mainContent) mainContent.style.marginLeft = "";
       return;
     }
 
@@ -309,6 +313,12 @@
 
     container.innerHTML = isCollapsed ? collapsedHTML : expandedHTML;
     container.className = isCollapsed ? "sidebar sidebar-collapsed" : "sidebar sidebar-expanded";
+
+    // Adjust main content margin to make room for the sidebar
+    var mainContent = document.getElementById("main-content");
+    if (mainContent) {
+      mainContent.style.marginLeft = isCollapsed ? "48px" : "280px";
+    }
 
     wireDesktopEvents(container);
   }
