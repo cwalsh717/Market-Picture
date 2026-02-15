@@ -439,13 +439,22 @@ async def watchlist_prices(
 
         result = await session.execute(
             text("""
-                SELECT wi.symbol, s.price, s.change_pct, s.change_abs
+                SELECT wi.symbol,
+                       COALESCE(s.price, dh.close) AS price,
+                       s.change_pct,
+                       s.change_abs
                 FROM watchlist_items wi
                 LEFT JOIN market_snapshots s ON s.symbol = wi.symbol
                     AND s.id = (
                         SELECT MAX(ms.id)
                         FROM market_snapshots ms
                         WHERE ms.symbol = wi.symbol
+                    )
+                LEFT JOIN daily_history dh ON dh.symbol = wi.symbol
+                    AND dh.date = (
+                        SELECT MAX(dh2.date)
+                        FROM daily_history dh2
+                        WHERE dh2.symbol = wi.symbol
                     )
                 WHERE wi.watchlist_id = :wl_id
                 ORDER BY wi.position

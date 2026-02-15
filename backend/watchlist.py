@@ -75,7 +75,8 @@ async def list_watchlist(user: dict = Depends(get_current_user)) -> dict:
         result = await session.execute(
             text("""
                 SELECT wi.symbol, wi.added_at, wi.position,
-                       s.price, s.change_pct, s.change_abs,
+                       COALESCE(s.price, dh.close) AS price,
+                       s.change_pct, s.change_abs,
                        s.fifty_two_week_high, s.fifty_two_week_low
                 FROM watchlist_items wi
                 LEFT JOIN market_snapshots s ON s.symbol = wi.symbol
@@ -83,6 +84,12 @@ async def list_watchlist(user: dict = Depends(get_current_user)) -> dict:
                         SELECT MAX(ms.id)
                         FROM market_snapshots ms
                         WHERE ms.symbol = wi.symbol
+                    )
+                LEFT JOIN daily_history dh ON dh.symbol = wi.symbol
+                    AND dh.date = (
+                        SELECT MAX(dh2.date)
+                        FROM daily_history dh2
+                        WHERE dh2.symbol = wi.symbol
                     )
                 WHERE wi.watchlist_id = :wl_id
                 ORDER BY wi.position

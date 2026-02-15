@@ -1471,13 +1471,14 @@
 .sidebar-item:hover { background: rgba(255,255,255,0.04); }
 .sidebar-item-symbol {
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
+  min-width: 48px;
 }
 .sidebar-item-data {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.1rem;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
 }
 .sidebar-item-price {
   font-size: 0.8rem;
@@ -1609,7 +1610,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.5rem 0.75rem;
+  padding: 0.325rem 0.75rem;
   text-decoration: none;
   color: #e5e7eb;
   cursor: pointer;
@@ -1668,7 +1669,16 @@
   width: 120px;
 }
 
-/* Sidebar overlays content (no margin shift) — dashboard stays centered */
+/* Sidebar pushes content — smooth margin transition */
+#main-content {
+  transition: margin-left 0.2s ease;
+}
+body.has-sidebar #main-content {
+  margin-left: 280px;
+}
+body.has-sidebar.sidebar-collapsed #main-content {
+  margin-left: 48px;
+}
 
 /* ── Mobile bottom sheet ──────────────────────────────────────────── */
 
@@ -1743,6 +1753,10 @@
 
 @media (max-width: 640px) {
   .sidebar { display: none !important; }
+  body.has-sidebar #main-content,
+  body.has-sidebar.sidebar-collapsed #main-content {
+    margin-left: 0;
+  }
 }
 @media (min-width: 641px) {
   .mobile-watchlist-btn { display: none !important; }
