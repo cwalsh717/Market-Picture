@@ -250,8 +250,49 @@ All V2 phases delivered:
 - Phase 9: Auth (email/password, JWT, bcrypt, users + watchlists tables)
 - Phase 10: Landing Page Polish + Auth UX (mobile nav, sparkline lazy loading, account management)
 
-## What's Next (V3)
-- Watchlist UI (frontend tab, CRUD endpoints — DB table already exists)
+## V3 Roadmap — Functional Tools for Users
+
+V2 built the framework (data, regime, narratives, charts, auth). V3 is about giving logged-in users real tools they can act on.
+
+### Phase 11: Watchlists
+The first logged-in feature. Users save symbols and get a personalized view of their portfolio.
+
+**Two surfaces:**
+- **Dashboard widget** — Compact watchlist strip on the main dashboard (visible when logged in). Quick glance at your basket: symbol, price, change %.
+- **Dedicated watchlist page** — Full watchlist view with more depth per symbol. LLM-generated basket report: how your holdings are moving, cross-correlations, notable news across your watchlist.
+
+**Backend:**
+- CRUD endpoints for watchlist (add, remove, reorder — DB table already exists)
+- LLM basket summary: Claude generates a narrative about the user's specific watchlist holdings
+
+**Frontend:**
+- Dashboard: logged-in users see their watchlist widget above/below the regime hero
+- Watchlist page: full basket view, per-symbol cards, LLM basket report
+- Add/remove symbols from search results and chart page
+
+### Phase 12: Stock Profile Page (Chart Page Rework)
+Rename and reimagine the chart page. Currently it's just a chart — it should be a full equity profile like Yahoo Finance, Finviz, or thinkorswim. The chart is one section, not the whole page.
+
+**Vision:**
+- Company overview: name, sector, description, key stats
+- Fundamental data: P/E, EPS, market cap, dividend yield, revenue, margins
+- The existing chart (candlestick, MAs, RSI) as one section
+- Key levels, 52-week range, analyst targets
+- Paint a digestible story of the business
+
+**Needs:** Financial data API research (company profiles, fundamentals, financials). Extensive design discussion before building.
+
+### Phase 13: Power Demand Dashboard
+New vertical tracking electricity demand driven by Magnificent 7 and AI infrastructure buildout.
+
+**Needs:** Extensive research — identify data sources for power demand, data center capacity, utility filings, grid load data. New API integrations. New page and data models.
+
+### Phase 14: Damodaran DCF Valuation
+Aswath Damodaran-style valuation model. Buy stocks at a fair price.
+
+**Needs:** SEC filings or financial data API (income statement, balance sheet, cash flow). DCF model implementation. Company document ingestion. This is essentially a mini equity research tool.
+
+### Future
 - Alerts (regime change, VIX spike, price thresholds via email)
 - Further mobile/performance polish
 - Narrative quality improvements
